@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod dialect;
+pub mod split;
 pub mod schema;
 pub mod value;
 
@@ -10,7 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-pub use config::{ConnectionConfig, DbKind, SshAuth, SshConfig};
+pub use config::{ConnectionConfig, DbKind, HttpTunnelConfig, SshAuth, SshConfig, TlsConfig, TlsVerify};
 pub use dialect::Dialect;
 pub use schema::{ForeignKeyDef, IndexDef, ColumnDef, ColumnInfo, ForeignKeyInfo, IndexInfo, ObjectKind, SchemaObject, TableDesign, TableInfo};
 pub use value::Value;
@@ -52,8 +53,8 @@ pub struct PageRequest {
     pub table: String,
     /// Raw SQL condition (without `WHERE`).
     pub filter: Option<String>,
-    /// (column, descending)
-    pub order: Option<(String, bool)>,
+    /// (column, descending), in priority order.
+    pub order: Vec<(String, bool)>,
     pub offset: u64,
     pub limit: u64,
 }

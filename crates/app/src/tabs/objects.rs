@@ -4,41 +4,42 @@ use db_core::{ObjectKind, SchemaObject};
 use egui::RichText;
 
 use crate::app::{Action, Env, Location, ObjRef, icon};
+use crate::icons::{self, Db, G};
 use crate::dialogs::ExportSource;
 
 pub fn object_menu(resp: &egui::Response, obj: &ObjRef, actions: &mut Vec<Action>) {
     resp.context_menu(|ui| {
         match obj.kind {
             ObjectKind::Table => {
-                if ui.button("Apri tabella").clicked() {
+                if icons::menu_item(ui, Db::Table, "Apri tabella").clicked() {
                     actions.push(Action::OpenTable(obj.clone()));
                 }
-                if ui.button("Progetta tabella").clicked() {
+                if icons::menu_item(ui, Db::Design, "Progetta tabella").clicked() {
                     actions.push(Action::DesignTable(obj.clone()));
                 }
                 ui.separator();
-                if ui.button("Importa…").clicked() {
+                if icons::menu_item(ui, Db::Import, "Importa…").clicked() {
                     actions.push(Action::Import(obj.clone()));
                 }
-                if ui.button("Esporta…").clicked() {
+                if icons::menu_item(ui, Db::Export, "Esporta…").clicked() {
                     actions.push(Action::Export(ExportSource::Table(obj.clone())));
                 }
                 ui.separator();
-                if ui.button("Svuota tabella").clicked() {
+                if icons::menu_item(ui, G::Eraser, "Svuota tabella").clicked() {
                     actions.push(Action::Truncate(obj.clone()));
                 }
-                if ui.button("Elimina tabella").clicked() {
+                if icons::menu_item(ui, G::Delete, "Elimina tabella").clicked() {
                     actions.push(Action::Drop(obj.clone()));
                 }
             }
             ObjectKind::View => {
-                if ui.button("Apri vista").clicked() {
+                if icons::menu_item(ui, Db::View, "Apri vista").clicked() {
                     actions.push(Action::OpenTable(obj.clone()));
                 }
-                if ui.button("Esporta…").clicked() {
+                if icons::menu_item(ui, Db::Export, "Esporta…").clicked() {
                     actions.push(Action::Export(ExportSource::Table(obj.clone())));
                 }
-                if ui.button("Elimina vista").clicked() {
+                if icons::menu_item(ui, G::Delete, "Elimina vista").clicked() {
                     actions.push(Action::Drop(obj.clone()));
                 }
             }
@@ -47,18 +48,20 @@ pub fn object_menu(resp: &egui::Response, obj: &ObjRef, actions: &mut Vec<Action
             }
         }
         ui.separator();
-        if ui.button("Copia nome").clicked() {
+        if icons::menu_item(ui, G::Copy, "Copia nome").clicked() {
             ui.ctx().copy_text(obj.name.clone());
         }
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ui(
     ui: &mut egui::Ui,
     loc: Option<&Location>,
     objects: Option<&Result<Vec<SchemaObject>, String>>,
     loading: bool,
     filter: &mut String,
+    kinds: &[ObjectKind],
     selected: &mut Option<ObjRef>,
     env: &mut Env<'_>,
 ) {
@@ -68,38 +71,39 @@ pub fn ui(
     };
     let sel_table = selected.clone().filter(|o| o.kind == ObjectKind::Table && o.db == loc.db && o.schema == loc.schema && o.conn == loc.conn);
     ui.horizontal_wrapped(|ui| {
-        if ui.add_enabled(sel_table.is_some(), egui::Button::new("▦ Apri tabella")).clicked()
+        if icons::button_ex(ui, Db::Table, "Apri tabella", false, sel_table.is_some()).clicked()
             && let Some(o) = sel_table.clone()
         {
             env.actions.push(Action::OpenTable(o));
         }
-        if ui.add_enabled(sel_table.is_some(), egui::Button::new("🖊 Progetta tabella")).clicked()
+        if icons::button_ex(ui, Db::Design, "Progetta tabella", false, sel_table.is_some()).clicked()
             && let Some(o) = sel_table.clone()
         {
             env.actions.push(Action::DesignTable(o));
         }
-        if ui.button("➕ Nuova tabella").clicked() {
+        if icons::button(ui, Db::NewTable, "Nuova tabella").clicked() {
             env.actions.push(Action::NewTable(loc.clone()));
         }
-        if ui.add_enabled(sel_table.is_some(), egui::Button::new("🗑 Elimina tabella")).clicked()
+        if icons::button_ex(ui, G::Delete, "Elimina tabella", false, sel_table.is_some()).clicked()
             && let Some(o) = sel_table.clone()
         {
             env.actions.push(Action::Drop(o));
         }
         ui.separator();
-        if ui.add_enabled(sel_table.is_some(), egui::Button::new("📥 Importa")).clicked()
+        if icons::button_ex(ui, Db::Import, "Importa", false, sel_table.is_some()).clicked()
             && let Some(o) = sel_table.clone()
         {
             env.actions.push(Action::Import(o));
         }
-        if ui.add_enabled(sel_table.is_some(), egui::Button::new("📤 Esporta")).clicked()
+        if icons::button_ex(ui, Db::Export, "Esporta", false, sel_table.is_some()).clicked()
             && let Some(o) = sel_table.clone()
         {
             env.actions.push(Action::Export(ExportSource::Table(o)));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add(egui::TextEdit::singleline(filter).hint_text("🔍 Cerca").desired_width(180.0));
-            if ui.button("🔄").on_hover_text("Aggiorna").clicked() {
+            ui.add(egui::TextEdit::singleline(filter).hint_text("Cerca").desired_width(180.0));
+            icons::show(ui, G::Search, 16.0);
+            if icons::small(ui, Db::Refresh, "Aggiorna", true).clicked() {
                 env.actions.push(Action::Refresh(loc.clone()));
             }
         });
@@ -118,7 +122,7 @@ pub fn ui(
         None => return,
     };
     let needle = filter.to_lowercase();
-    let shown: Vec<&SchemaObject> = objs.iter().filter(|o| needle.is_empty() || o.name.to_lowercase().contains(&needle)).collect();
+    let shown: Vec<&SchemaObject> = objs.iter().filter(|o| kinds.contains(&o.kind) && (needle.is_empty() || o.name.to_lowercase().contains(&needle))).collect();
     egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
@@ -140,7 +144,10 @@ pub fn ui(
                 let obj = ObjRef { conn: loc.conn.clone(), db: loc.db.clone(), schema: loc.schema.clone(), name: o.name.clone(), kind: o.kind };
                 row.set_selected(selected.as_ref() == Some(&obj));
                 row.col(|ui| {
-                    ui.label(format!("{}  {}", icon(o.kind), o.name));
+                    ui.horizontal(|ui| {
+                        icons::show(ui, icon(o.kind), 16.0);
+                        ui.label(o.name.as_str());
+                    });
                 });
                 row.col(|ui| {
                     ui.label(o.kind.singular());

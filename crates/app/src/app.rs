@@ -8,6 +8,7 @@ use egui::{Color32, RichText};
 
 use crate::backend::{Backend, Msg, TabId};
 use crate::dialogs::{ConfirmDialog, ConnDialog, ExportDialog, ExportSource, ImportDialog};
+use crate::icons::{self, Db, G, Ico};
 use crate::store;
 use crate::tabs::{designer::DesignerTab, objects, query::QueryTab, table::TableTab};
 
@@ -71,6 +72,8 @@ pub enum Action {
     DesignTable(ObjRef),
     NewTable(Location),
     NewQuery(Location),
+    /// New query tab with the visual builder open.
+    NewBuilder(Location),
     Export(ExportSource),
     Import(ObjRef),
     Refresh(Location),
@@ -125,17 +128,19 @@ pub struct App {
     confirm: Option<ConfirmDialog>,
     notices: Vec<(String, bool, Instant)>,
     objects_filter: String,
+    /// Object kinds the Objects tab lists (toolbar Tabella / Vista / Funzione / Trigger).
+    objects_kinds: Vec<ObjectKind>,
     actions: Vec<Action>,
     cli: crate::cli::Cli,
 }
 
-pub fn icon(kind: ObjectKind) -> &'static str {
+pub fn icon(kind: ObjectKind) -> Db {
     match kind {
-        ObjectKind::Table => "▦",
-        ObjectKind::View => "👁",
-        ObjectKind::Function => "ƒ",
-        ObjectKind::Procedure => "⚙",
-        ObjectKind::Trigger => "⚡",
+        ObjectKind::Table => Db::Table,
+        ObjectKind::View => Db::View,
+        ObjectKind::Function => Db::Function,
+        ObjectKind::Procedure => Db::Procedure,
+        ObjectKind::Trigger => Db::Trigger,
     }
 }
 
@@ -192,6 +197,7 @@ impl App {
             confirm: None,
             notices: Vec::new(),
             objects_filter: String::new(),
+            objects_kinds: vec![ObjectKind::Table, ObjectKind::View],
             actions: Vec::new(),
             cli: cli_opts,
         };
@@ -212,7 +218,15 @@ impl App {
             };
             if let Some(k) = kind {
                 let d = ConnDialog::new(k);
-                app.conn_dialog = Some(if app.cli.ssh_tab { d.on_ssh_tab() } else { d });
+                app.conn_dialog = Some(if app.cli.ssh_tab {
+                    d.on_ssh_tab()
+                } else if app.cli.http_tab {
+                    d.on_http_tab()
+                } else if app.cli.ssl_tab {
+                    d.on_ssl_tab()
+                } else {
+                    d
+                });
             }
         }
         Ok(app)
@@ -410,7 +424,7 @@ impl App {
             }
             other => {
                 let tab = match &other {
-                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } => *tab,
+                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } => *tab,
                     _ => return,
                 };
                 let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut self.actions };
@@ -435,9 +449,12 @@ impl App {
                         continue;
                     }
                     let Some(cfg) = self.cfg(&obj.conn).cloned() else { continue };
-                    let title = format!("{} @{}", obj.name, if obj.db.is_empty() { cfg.name.clone() } else { obj.db.clone() });
+                    let title = if obj.db.is_empty() || obj.db == "main" { format!("{} @{}", obj.name, cfg.name) } else { format!("{} @{} ({})", obj.name, obj.db, cfg.name) };
                     let id = self.next_id;
                     let mut tab = TableTab::new(id, obj);
+                    if !self.cli.table_ui.is_empty() {
+                        tab.debug_setup(&std::mem::take(&mut self.cli.table_ui));
+                    }
                     let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut Vec::new() };
                     tab.reload(&mut env, true);
                     self.add_tab(title, Tab::Table(Box::new(tab)));
@@ -461,6 +478,14 @@ impl App {
                     let n = self.tabs.iter().filter(|t| matches!(t.tab, Tab::Query(_))).count() + 1;
                     let title = format!("Query {n} @{}", if loc.db.is_empty() { self.cfg(&loc.conn).map(|c| c.name.clone()).unwrap_or_default() } else { loc.db.clone() });
                     self.add_tab(title, Tab::Query(Box::new(QueryTab::new(id, loc))));
+                }
+                Action::NewBuilder(loc) => {
+                    let id = self.next_id;
+                    let n = self.tabs.iter().filter(|t| matches!(t.tab, Tab::Query(_))).count() + 1;
+                    let mut tab = QueryTab::new(id, loc);
+                    let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut Vec::new() };
+                    tab.open_builder(&mut env);
+                    self.add_tab(format!("Query {n}"), Tab::Query(Box::new(tab)));
                 }
                 Action::Export(src) => self.export_dialog = Some(ExportDialog::new(src)),
                 Action::Import(obj) => {
@@ -535,59 +560,80 @@ impl App {
     // ----- UI -----
 
     fn toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            let conn_btn = big_button(ui, "🔌", "Connessione");
+            let conn_btn = icons::tile(ui, Db::Connection, "Connessione");
             egui::Popup::menu(&conn_btn).show(|ui| {
                 for k in DbKind::ALL {
-                    if ui.button(RichText::new(format!("●  {}…", k.label())).color(kind_color(k))).clicked() {
+                    let r = icons::menu_item(ui, Db::Database, &format!("{}…", k.label()));
+                    ui.painter().circle_filled(r.rect.left_center() + egui::vec2(18.0, 4.0), 3.0, kind_color(k));
+                    if r.clicked() {
                         self.conn_dialog = Some(ConnDialog::new(k));
                     }
                 }
             });
-            ui.separator();
             let loc = self.loc.clone();
-            if big_button(ui, "📝", "Nuova query").clicked() {
+            if icons::tile(ui, Db::Query, "Nuova query").clicked() {
                 match loc.clone() {
                     Some(l) => self.actions.push(Action::NewQuery(l)),
                     None => self.notify("Apri prima una connessione/database", true),
                 }
             }
-            if big_button(ui, "▦", "Tabella").clicked() {
-                self.active = 0;
+            ui.separator();
+            // As in database GUIs: these show that kind of object in the Objects tab.
+            for (ic, label, kinds) in [
+                (Db::Table, "Tabella", vec![ObjectKind::Table]),
+                (Db::View, "Vista", vec![ObjectKind::View]),
+                (Db::Function, "Funzione", vec![ObjectKind::Function, ObjectKind::Procedure]),
+                (Db::Trigger, "Trigger", vec![ObjectKind::Trigger]),
+            ] {
+                let selected = self.active == 0 && self.objects_kinds == kinds;
+                let r = icons::tile(ui, ic, label);
+                if selected {
+                    ui.painter().rect_stroke(r.rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
+                }
+                if r.clicked() {
+                    self.objects_kinds = kinds;
+                    self.active = 0;
+                }
             }
-            if big_button(ui, "➕", "Nuova tabella").clicked() {
+            ui.separator();
+            if icons::tile(ui, Db::NewTable, "Nuova tabella").clicked() {
                 match loc.clone() {
                     Some(l) => self.actions.push(Action::NewTable(l)),
                     None => self.notify("Apri prima un database", true),
                 }
             }
+            if icons::tile(ui, Db::QueryBuilder, "Query Builder").clicked() {
+                match loc.clone() {
+                    Some(l) => self.actions.push(Action::NewBuilder(l)),
+                    None => self.notify("Apri prima una connessione/database", true),
+                }
+            }
             ui.separator();
             let sel_table = self.selected.clone().filter(|o| o.kind == ObjectKind::Table);
-            if big_button(ui, "📥", "Importa").clicked() {
+            if icons::tile(ui, Db::Import, "Importa").clicked() {
                 match sel_table.clone() {
                     Some(o) => self.actions.push(Action::Import(o)),
                     None => self.notify("Seleziona una tabella da importare", true),
                 }
             }
-            if big_button(ui, "📤", "Esporta").clicked() {
+            if icons::tile(ui, Db::Export, "Esporta").clicked() {
                 match self.selected.clone().filter(|o| matches!(o.kind, ObjectKind::Table | ObjectKind::View)) {
                     Some(o) => self.actions.push(Action::Export(ExportSource::Table(o))),
                     None => self.notify("Seleziona una tabella o vista da esportare", true),
                 }
             }
             ui.separator();
-            if big_button(ui, "🔄", "Aggiorna").clicked()
+            if icons::tile(ui, Db::Refresh, "Aggiorna").clicked()
                 && let Some(l) = loc
             {
                 self.actions.push(Action::Refresh(l));
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let dark = ui.visuals().dark_mode;
-                if ui.button(if dark { "☀" } else { "🌙" }).on_hover_text("Tema chiaro/scuro").clicked() {
-                    ui.ctx().set_theme(if dark { egui::Theme::Light } else { egui::Theme::Dark });
-                }
-            });
+            let dark = ui.visuals().dark_mode;
+            if icons::tile(ui, if dark { Db::Sun } else { Db::Moon }, if dark { "Tema chiaro" } else { "Tema scuro" }).clicked() {
+                ui.ctx().set_theme(if dark { egui::Theme::Light } else { egui::Theme::Dark });
+            }
         });
     }
 
@@ -612,7 +658,7 @@ impl App {
                 let node = self.tree.entry(cfg.id.clone()).or_default();
                 let connected = matches!(node.dbs, Some(Load::Ready(_)));
                 let loading = matches!(node.dbs, Some(Load::Loading));
-                let r = tree_row(ui, 0, Some(node.open), RichText::new("●").color(if connected { kind_color(cfg.kind) } else { Color32::GRAY }), &cfg.name, false);
+                let r = tree_row(ui, 0, Some(node.open), Db::Connection.into(), Some(if connected { kind_color(cfg.kind) } else { Color32::GRAY }), &cfg.name, false);
                 if r.toggled {
                     if node.dbs.is_none() {
                         connect = Some(cfg.id.clone());
@@ -653,7 +699,7 @@ impl App {
                 let Some(Load::Ready(dbs)) = &mut node.dbs else { continue };
                 for db in dbs.iter_mut() {
                     let active = db.open && !matches!(db.schemas, Load::NotLoaded);
-                    let r = tree_row(ui, 1, Some(db.open), RichText::new("🗄").color(if active { Color32::from_rgb(0xD9, 0xA4, 0x06) } else { Color32::GRAY }), &db.name, false);
+                    let r = tree_row(ui, 1, Some(db.open), if active { Db::DatabaseOpen.into() } else { Db::Database.into() }, None, &db.name, false);
                     let here = Location { conn: cfg.id.clone(), db: db.name.clone(), schema: None };
                     if r.toggled || r.resp.double_clicked() {
                         if matches!(db.schemas, Load::NotLoaded | Load::Failed(_)) {
@@ -700,7 +746,7 @@ impl App {
                         Load::Ready(schemas) => {
                             for s in schemas.iter_mut() {
                                 let sl = Location { conn: cfg.id.clone(), db: db.name.clone(), schema: Some(s.name.clone()) };
-                                let r = tree_row(ui, 2, Some(s.open), RichText::new("📂"), &s.name, self.loc.as_ref() == Some(&sl));
+                                let r = tree_row(ui, 2, Some(s.open), Db::Schema.into(), None, &s.name, self.loc.as_ref() == Some(&sl));
                                 if r.toggled || r.resp.double_clicked() {
                                     s.open = !s.open;
                                     if s.open && matches!(s.objects, Load::NotLoaded | Load::Failed(_)) {
@@ -779,11 +825,11 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 for (i, t) in self.tabs.iter().enumerate() {
                     let selected = i == self.active;
-                    let glyph = match &t.tab {
-                        Tab::Objects => "☰",
-                        Tab::Table(_) => "▦",
-                        Tab::Query(_) => "📝",
-                        Tab::Designer(_) => "🖊",
+                    let glyph: Ico = match &t.tab {
+                        Tab::Objects => Db::Objects.into(),
+                        Tab::Table(_) => Db::Table.into(),
+                        Tab::Query(_) => Db::Query.into(),
+                        Tab::Designer(_) => Db::Design.into(),
                     };
                     let frame = egui::Frame::new()
                         .fill(if selected { ui.visuals().extreme_bg_color } else { ui.visuals().faint_bg_color })
@@ -792,14 +838,15 @@ impl App {
                     frame.show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            let label = ui.add(egui::Label::new(RichText::new(format!("{glyph} {}", t.title)).strong_if(selected)).sense(egui::Sense::click()));
+                            icons::show(ui, glyph, 15.0);
+                            let label = ui.add(egui::Label::new(RichText::new(t.title.as_str()).strong_if(selected)).sense(egui::Sense::click()));
                             if label.clicked() {
                                 self.active = i;
                             }
                             if label.middle_clicked() && i > 0 {
                                 close = Some(i);
                             }
-                            if i > 0 && ui.add(egui::Button::new(RichText::new("×").small()).frame(false)).clicked() {
+                            if i > 0 && close_button(ui).clicked() {
                                 close = Some(i);
                             }
                         });
@@ -827,14 +874,18 @@ impl App {
         ui.horizontal(|ui| {
             if let Some(l) = &self.loc {
                 let name = self.cfg(&l.conn).map(|c| c.name.clone()).unwrap_or_default();
-                let mut s = format!("🔌 {name}");
+                icons::show(ui, Db::Connection, 13.0);
+                ui.label(RichText::new(name).small());
                 if !l.db.is_empty() {
-                    s.push_str(&format!("  ›  🗄 {}", l.db));
+                    ui.label(RichText::new("›").small().weak());
+                    icons::show(ui, Db::Database, 13.0);
+                    ui.label(RichText::new(l.db.as_str()).small());
                 }
                 if let Some(sc) = &l.schema {
-                    s.push_str(&format!("  ›  📂 {sc}"));
+                    ui.label(RichText::new("›").small().weak());
+                    icons::show(ui, Db::Schema, 13.0);
+                    ui.label(RichText::new(sc.as_str()).small());
                 }
-                ui.label(RichText::new(s).small());
             }
             if let Some(TabEntry { tab: Tab::Table(t), .. }) = self.tabs.get(self.active) {
                 ui.separator();
@@ -859,9 +910,10 @@ impl App {
                 egui::Frame::popup(ui.style()).fill(if *error { Color32::from_rgb(0xFB, 0xE3, 0xE1) } else { Color32::from_rgb(0xE3, 0xF6, 0xE8) }).show(ui, |ui| {
                     ui.set_max_width(420.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(if *error { "⚠" } else { "✔" }).color(Color32::BLACK));
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                        icons::paint(ui.painter(), r, if *error { G::Info } else { G::Check }, Color32::BLACK);
                         ui.add(egui::Label::new(RichText::new(text).color(Color32::BLACK)).wrap());
-                        if ui.small_button("×").clicked() {
+                        if close_button(ui).clicked() {
                             dismiss = Some(i);
                         }
                     });
@@ -888,6 +940,13 @@ impl App {
                 self.selected = Some(obj.clone());
                 self.actions.push(Action::OpenTable(obj));
             }
+        }
+        if let Some(spec) = self.cli.builder.take() {
+            let id = self.next_id;
+            let mut tab = QueryTab::new(id, loc.clone());
+            let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut self.actions };
+            tab.debug_builder(&mut env, &spec);
+            self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
         }
         if let Some(sql) = self.cli.query.take() {
             let id = self.next_id;
@@ -968,17 +1027,13 @@ impl StrongIf for RichText {
     }
 }
 
-fn big_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(74.0, 50.0), egui::Sense::click());
-    if ui.is_rect_visible(rect) {
-        let v = ui.style().interact(&resp);
-        if resp.hovered() || resp.is_pointer_button_down_on() {
-            ui.painter().rect_filled(rect, 4.0, v.bg_fill);
-        }
-        let color = ui.visuals().text_color();
-        ui.painter().text(rect.center_top() + egui::vec2(0.0, 16.0), egui::Align2::CENTER_CENTER, icon, egui::FontId::proportional(20.0), color);
-        ui.painter().text(rect.center_bottom() - egui::vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), color);
+/// A small frameless × for tabs and notices.
+fn close_button(ui: &mut egui::Ui) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 3.0, ui.visuals().widgets.hovered.weak_bg_fill);
     }
+    icons::paint(ui.painter(), rect.shrink(2.0), G::Close, ui.visuals().weak_text_color());
     resp
 }
 
@@ -987,7 +1042,7 @@ struct TreeRow {
     toggled: bool,
 }
 
-fn tree_row(ui: &mut egui::Ui, depth: usize, open: Option<bool>, icon: RichText, label: &str, selected: bool) -> TreeRow {
+fn tree_row(ui: &mut egui::Ui, depth: usize, open: Option<bool>, icon: Ico, badge: Option<Color32>, label: &str, selected: bool) -> TreeRow {
     let h = 20.0;
     let w = ui.available_width().max(160.0);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
@@ -1005,10 +1060,13 @@ fn tree_row(ui: &mut egui::Ui, depth: usize, open: Option<bool>, icon: RichText,
         if let Some(o) = open {
             ui.painter().text(tri.center(), egui::Align2::CENTER_CENTER, if o { "⏷" } else { "⏵" }, egui::FontId::proportional(10.0), visuals.weak_text_color());
         }
-        let icon_pos = egui::pos2(x0 + 22.0, rect.center().y);
-        let galley = egui::WidgetText::from(icon.size(13.0)).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Body);
-        ui.painter().galley(icon_pos - egui::vec2(galley.size().x / 2.0, galley.size().y / 2.0), galley, text_color);
-        ui.painter().text(egui::pos2(x0 + 34.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), text_color);
+        let icon_rect = egui::Rect::from_center_size(egui::pos2(x0 + 24.0, rect.center().y), egui::vec2(16.0, 16.0));
+        icons::paint(ui.painter(), icon_rect, icon, text_color);
+        if let Some(b) = badge {
+            ui.painter().circle_filled(icon_rect.left_bottom() + egui::vec2(2.0, -2.0), 3.2, b);
+            ui.painter().circle_stroke(icon_rect.left_bottom() + egui::vec2(2.0, -2.0), 3.2, egui::Stroke::new(1.0, visuals.panel_fill));
+        }
+        ui.painter().text(egui::pos2(x0 + 37.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), text_color);
     }
     TreeRow { resp, toggled }
 }
@@ -1046,7 +1104,7 @@ fn objects_tree(
                 }
                 let id = ui.make_persistent_id(("grp", loc, kind));
                 let mut is_open = ui.data_mut(|d| *d.get_persisted_mut_or(id, kind == ObjectKind::Table));
-                let r = tree_row(ui, depth, Some(is_open), RichText::new(icon(kind)), &format!("{} ({})", kind.label(), items.len()), false);
+                let r = tree_row(ui, depth, Some(is_open), icon(kind).into(), None, &format!("{} ({})", kind.label(), items.len()), false);
                 if r.toggled || r.resp.double_clicked() {
                     is_open = !is_open;
                     ui.data_mut(|d| d.insert_persisted(id, is_open));
@@ -1066,7 +1124,7 @@ fn objects_tree(
                 }
                 for o in items {
                     let obj = ObjRef { conn: loc.conn.clone(), db: loc.db.clone(), schema: loc.schema.clone(), name: o.name.clone(), kind: o.kind };
-                    let r = tree_row(ui, depth + 1, None, RichText::new(icon(kind)), &o.name, selected == Some(&obj));
+                    let r = tree_row(ui, depth + 1, None, icon(kind).into(), None, &o.name, selected == Some(&obj));
                     if r.resp.clicked() {
                         *select = Some(obj.clone());
                     }
@@ -1088,6 +1146,10 @@ impl eframe::App for App {
         }
         self.automation();
         self.cli.tick(&ctx);
+        if self.cli.icon_gallery {
+            egui::CentralPanel::default().show(ui, crate::icons::gallery);
+            return;
+        }
 
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.add_space(2.0);
@@ -1114,7 +1176,7 @@ impl eframe::App for App {
                 match &mut entry.tab {
                     Tab::Objects => {
                         let mut sel = self.selected.clone();
-                        objects::ui(ui, loc.as_ref(), objects_snapshot.as_ref(), loading, &mut self.objects_filter, &mut sel, &mut env);
+                        objects::ui(ui, loc.as_ref(), objects_snapshot.as_ref(), loading, &mut self.objects_filter, &self.objects_kinds, &mut sel, &mut env);
                         self.selected = sel;
                     }
                     Tab::Table(t) => t.ui(ui, &mut env),

@@ -51,7 +51,7 @@ async fn sqlite_roundtrip() {
         .unwrap();
     assert_eq!(n, 3);
     assert_eq!(drv.count_rows(None, "people", None).await.unwrap(), 2);
-    let page = drv.fetch_page(&PageRequest { table: "people".into(), order: Some(("id".into(), true)), limit: 1, ..Default::default() }).await.unwrap();
+    let page = drv.fetch_page(&PageRequest { table: "people".into(), order: vec![("id".into(), true)], limit: 1, ..Default::default() }).await.unwrap();
     assert_eq!(page.rows[0][1], Value::Text("Cy".into()));
 
     // Designer: change a type → SQLite rebuild keeps the data.

@@ -4,6 +4,7 @@
 //! GridCraft worksheet grid (<https://github.com/storytold/gridcraft>, MIT OR Apache-2.0);
 //! see `NOTICE.md`.
 
+pub mod datetime;
 mod geo;
 mod grid;
 pub mod line_index;

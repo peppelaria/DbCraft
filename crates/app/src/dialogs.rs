@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use db_core::{ConnectionConfig, DbError, DbKind, DbResult, Dialect, ResultSet, RowChange, SshAuth, SshConfig, TableInfo, Value};
+use db_core::{ConnectionConfig, DbError, DbKind, DbResult, Dialect, ResultSet, RowChange, SshAuth, SshConfig, TableInfo, TlsVerify, Value};
 use egui::RichText;
 
 use crate::app::{ConfirmKind, ObjRef};
@@ -29,15 +29,28 @@ pub enum ConnOutcome {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConnTab {
     General,
+    Ssl,
     Ssh,
+    Http,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HttpTab {
+    Auth,
+    Proxy,
+}
+
+/// The tunnel script, to save next to the user's web site.
+const TUNNEL_SCRIPT: &str = include_str!("../../../tunnel/dbcraft-tunnel.php");
 
 pub struct ConnDialog {
     cfg: ConnectionConfig,
     is_new: bool,
     port: String,
     ssh_port: String,
+    proxy_port: String,
     tab: ConnTab,
+    http_tab: HttpTab,
 }
 
 impl ConnDialog {
@@ -60,13 +73,34 @@ impl ConnDialog {
         Self::with(cfg, false)
     }
 
+    pub fn on_http_tab(mut self) -> Self {
+        self.tab = ConnTab::Http;
+        self.cfg.http.enabled = true;
+        self.cfg.http.basic_auth = true;
+        self
+    }
+
+    pub fn on_ssl_tab(mut self) -> Self {
+        self.tab = ConnTab::Ssl;
+        self.cfg.ssl = true;
+        self
+    }
+
     pub fn on_ssh_tab(mut self) -> Self {
         self.tab = ConnTab::Ssh;
         self
     }
 
     fn with(cfg: ConnectionConfig, is_new: bool) -> Self {
-        ConnDialog { port: cfg.port.to_string(), ssh_port: cfg.ssh.port_or_default().to_string(), cfg, is_new, tab: ConnTab::General }
+        ConnDialog {
+            port: cfg.port.to_string(),
+            ssh_port: cfg.ssh.port_or_default().to_string(),
+            proxy_port: if cfg.http.proxy_port == 0 { "8080".into() } else { cfg.http.proxy_port.to_string() },
+            cfg,
+            is_new,
+            tab: ConnTab::General,
+            http_tab: HttpTab::Auth,
+        }
     }
 
     pub fn show(&mut self, ctx: &egui::Context, backend: &Backend) -> Option<ConnOutcome> {
@@ -77,14 +111,22 @@ impl ConnDialog {
             if !sqlite {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.tab, ConnTab::General, "Generale");
+                    let ssl_label = if self.cfg.ssl { "SSL ●" } else { "SSL" };
+                    ui.selectable_value(&mut self.tab, ConnTab::Ssl, ssl_label);
                     let ssh_label = if self.cfg.ssh.enabled { "SSH ●" } else { "SSH" };
                     ui.selectable_value(&mut self.tab, ConnTab::Ssh, ssh_label);
+                    if self.cfg.kind != DbKind::SqlServer {
+                        let http_label = if self.cfg.http.enabled { "HTTP ●" } else { "HTTP" };
+                        ui.selectable_value(&mut self.tab, ConnTab::Http, http_label);
+                    }
                 });
                 ui.separator();
             }
             ui.set_min_height(300.0);
             match self.tab {
                 ConnTab::Ssh if !sqlite => self.ssh_ui(ui),
+                ConnTab::Ssl if !sqlite => self.ssl_ui(ui),
+                ConnTab::Http if !sqlite => self.http_ui(ui),
                 _ => self.general_ui(ui),
             }
             ui.add_space(10.0);
@@ -164,17 +206,151 @@ impl ConnDialog {
             ui.label("Database iniziale:");
             ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(280.0).hint_text("(facoltativo)"));
             ui.end_row();
-            ui.label("");
-            ui.checkbox(&mut self.cfg.ssl, "Richiedi SSL/TLS");
-            ui.end_row();
         });
-        if self.cfg.ssh.enabled {
+        if self.cfg.ssh.enabled || self.cfg.http.enabled {
             ui.add_space(6.0);
-            ui.label(RichText::new("Con il tunnel SSH, host e porta sono quelli del database visti dal server SSH (es. localhost).").small().weak());
+            let via = if self.cfg.http.enabled { "dal web server del tunnel HTTP" } else { "dal server SSH" };
+            ui.label(RichText::new(format!("Con il tunnel, host e porta sono quelli del database visti {via} (es. localhost).")).small().weak());
         }
     }
 
+    fn ssl_ui(&mut self, ui: &mut egui::Ui) {
+        let kind = self.cfg.kind;
+        ui.checkbox(&mut self.cfg.ssl, "Usa SSL");
+        ui.label(
+            RichText::new("Senza SSL la connessione è comunque cifrata se il server lo offre, ma il certificato non viene verificato e il server può rifiutare la cifratura.")
+                .small()
+                .weak(),
+        );
+        ui.add_space(6.0);
+        let tls = &mut self.cfg.tls;
+        ui.add_enabled_ui(self.cfg.ssl, |ui| {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.strong("Verifica del server");
+                ui.radio_value(&mut tls.verify, TlsVerify::None, "Nessuna — cifra soltanto, accetta qualsiasi certificato");
+                ui.radio_value(&mut tls.verify, TlsVerify::Ca, "Verifica il certificato del server con la CA");
+                let full = if kind == DbKind::SqlServer { "Verifica CA e nome host (su SQL Server equivale alla precedente)" } else { "Verifica CA e nome host" };
+                ui.radio_value(&mut tls.verify, TlsVerify::Full, full);
+                ui.add_space(4.0);
+                egui::Grid::new("ssl-ca").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label("Certificato CA:");
+                    file_field(ui, &mut tls.ca_cert, "(facoltativo: radici di sistema)");
+                    ui.end_row();
+                });
+            });
+            ui.add_space(6.0);
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.strong("Autenticazione con certificato client");
+                ui.label(RichText::new("Per server che richiedono un certificato client (es. utenti MySQL con REQUIRE X509, PostgreSQL con autenticazione cert).").small().weak());
+                egui::Grid::new("ssl-client").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label("Certificato client:");
+                    file_field(ui, &mut tls.client_cert, "(facoltativo)");
+                    ui.end_row();
+                    ui.label("Chiave client:");
+                    file_field(ui, &mut tls.client_key, "(facoltativo)");
+                    ui.end_row();
+                });
+            });
+        });
+        if self.cfg.ssl
+            && let Err(e) = self.cfg.tls.check_files()
+        {
+            ui.colored_label(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C), e);
+        }
+    }
+
+    fn http_ui(&mut self, ui: &mut egui::Ui) {
+        let http_on = self.cfg.http.enabled;
+        if ui.checkbox(&mut self.cfg.http.enabled, "Usa tunnel HTTP").changed() && self.cfg.http.enabled {
+            self.cfg.ssh.enabled = false;
+        }
+        ui.label(
+            RichText::new("Carica lo script del tunnel su un web server PHP che raggiunge il database, poi indica qui il suo URL. Disponibile per MySQL/MariaDB e PostgreSQL.")
+                .small()
+                .weak(),
+        );
+        if ui.button("Salva script del tunnel (dbcraft-tunnel.php)…").clicked()
+            && let Some(p) = rfd::FileDialog::new().set_file_name("dbcraft-tunnel.php").add_filter("PHP", &["php"]).save_file()
+        {
+            let _ = std::fs::write(p, TUNNEL_SCRIPT);
+        }
+        ui.add_space(4.0);
+        let t = &mut self.cfg.http;
+        ui.add_enabled_ui(http_on || t.enabled, |ui| {
+            egui::Grid::new("http-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                ui.label("URL del tunnel:");
+                ui.add(egui::TextEdit::singleline(&mut t.url).desired_width(340.0).hint_text("https://example.com/dbcraft-tunnel.php"));
+                ui.end_row();
+                ui.label("Token:");
+                ui.add(egui::TextEdit::singleline(&mut t.token).password(true).desired_width(240.0).hint_text("DBCRAFT_TUNNEL_TOKEN (se impostato)"));
+                ui.end_row();
+                ui.label("");
+                ui.checkbox(&mut t.base64, "Codifica le query in base64");
+                ui.end_row();
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.http_tab, HttpTab::Auth, "Autenticazione");
+                ui.selectable_value(&mut self.http_tab, HttpTab::Proxy, "Proxy");
+            });
+            egui::Frame::group(ui.style()).show(ui, |ui| match self.http_tab {
+                HttpTab::Auth => {
+                    ui.checkbox(&mut t.basic_auth, "Usa autenticazione con password (HTTP Basic)");
+                    ui.add_enabled_ui(t.basic_auth, |ui| {
+                        egui::Grid::new("http-auth").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                            ui.label("Nome utente:");
+                            ui.add(egui::TextEdit::singleline(&mut t.user).desired_width(240.0));
+                            ui.end_row();
+                            ui.label("Password:");
+                            ui.add(egui::TextEdit::singleline(&mut t.password).password(true).desired_width(240.0));
+                            ui.end_row();
+                        });
+                    });
+                    ui.checkbox(&mut t.save_password, "Salva password, token e password proxy (Portachiavi)");
+                    ui.separator();
+                    ui.label("Autenticazione con certificato (HTTPS)");
+                    egui::Grid::new("http-cert").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                        ui.label("Certificato client:");
+                        file_field(ui, &mut t.client_cert, "(facoltativo)");
+                        ui.end_row();
+                        ui.label("Chiave client:");
+                        file_field(ui, &mut t.client_key, "(facoltativo, non cifrata)");
+                        ui.end_row();
+                        ui.label("Certificato CA:");
+                        file_field(ui, &mut t.ca_cert, "(facoltativo)");
+                        ui.end_row();
+                    });
+                }
+                HttpTab::Proxy => {
+                    ui.checkbox(&mut t.proxy, "Usa proxy");
+                    ui.add_enabled_ui(t.proxy, |ui| {
+                        egui::Grid::new("http-proxy").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                            ui.label("Host:");
+                            ui.add(egui::TextEdit::singleline(&mut t.proxy_host).desired_width(240.0));
+                            ui.end_row();
+                            ui.label("Porta:");
+                            if ui.add(egui::TextEdit::singleline(&mut self.proxy_port).desired_width(80.0)).changed() {
+                                t.proxy_port = self.proxy_port.trim().parse().unwrap_or(t.proxy_port);
+                            }
+                            ui.end_row();
+                            ui.label("Nome utente:");
+                            ui.add(egui::TextEdit::singleline(&mut t.proxy_user).desired_width(240.0));
+                            ui.end_row();
+                            ui.label("Password:");
+                            ui.add(egui::TextEdit::singleline(&mut t.proxy_password).password(true).desired_width(240.0));
+                            ui.end_row();
+                        });
+                    });
+                }
+            });
+        });
+    }
+
     fn ssh_ui(&mut self, ui: &mut egui::Ui) {
+        if self.cfg.http.enabled {
+            ui.label(RichText::new("Il tunnel SSH non si può usare insieme al tunnel HTTP.").weak());
+            return;
+        }
         let ssh = &mut self.cfg.ssh;
         ui.checkbox(&mut ssh.enabled, "Usa tunnel SSH");
         ui.add_space(4.0);
@@ -237,6 +413,18 @@ impl ConnDialog {
             .weak(),
         );
     }
+}
+
+/// A path field with a "…" file picker (PEM files).
+fn file_field(ui: &mut egui::Ui, path: &mut String, hint: &str) {
+    ui.horizontal(|ui| {
+        ui.add(egui::TextEdit::singleline(path).desired_width(260.0).hint_text(hint));
+        if ui.button("…").on_hover_text("Scegli il file").clicked()
+            && let Some(p) = rfd::FileDialog::new().add_filter("Certificati e chiavi", &["pem", "crt", "cer", "key"]).add_filter("Tutti i file", &["*"]).pick_file()
+        {
+            *path = p.to_string_lossy().into_owned();
+        }
+    });
 }
 
 // ----- export -----
@@ -408,7 +596,7 @@ impl ImportDialog {
             ui.set_max_width(720.0);
             let mut keep = true;
             ui.horizontal(|ui| {
-                if ui.button("📂 Scegli file CSV…").clicked()
+                if crate::icons::button(ui, crate::icons::G::OpenFolder, "Scegli file CSV…").clicked()
                     && let Some(p) = rfd::FileDialog::new().add_filter("CSV", &["csv", "txt", "tsv"]).pick_file()
                 {
                     self.path = Some(p);

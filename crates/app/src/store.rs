@@ -26,6 +26,11 @@ pub fn load() -> Vec<ConnectionConfig> {
         if c.ssh.save_password {
             c.ssh.password = get_password(&ssh_entry(&c.id)).unwrap_or_default();
         }
+        if c.http.save_password {
+            c.http.password = get_password(&format!("{}:http", c.id)).unwrap_or_default();
+            c.http.token = get_password(&format!("{}:http-token", c.id)).unwrap_or_default();
+            c.http.proxy_password = get_password(&format!("{}:proxy", c.id)).unwrap_or_default();
+        }
     }
     v
 }
@@ -50,6 +55,14 @@ pub fn save_secrets(c: &ConnectionConfig) -> Result<(), String> {
     } else {
         delete_password(&ssh_entry(&c.id));
     }
+    for (suffix, secret) in [("http", &c.http.password), ("http-token", &c.http.token), ("proxy", &c.http.proxy_password)] {
+        let entry = format!("{}:{suffix}", c.id);
+        if c.http.enabled && c.http.save_password {
+            set_password(&entry, secret)?;
+        } else {
+            delete_password(&entry);
+        }
+    }
     Ok(())
 }
 
@@ -57,6 +70,9 @@ pub fn save_secrets(c: &ConnectionConfig) -> Result<(), String> {
 pub fn delete_secrets(id: &str) {
     delete_password(id);
     delete_password(&ssh_entry(id));
+    for suffix in ["http", "http-token", "proxy"] {
+        delete_password(&format!("{id}:{suffix}"));
+    }
 }
 
 pub fn save(conns: &[ConnectionConfig]) -> Result<(), String> {

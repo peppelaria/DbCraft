@@ -8,6 +8,11 @@ pub enum ColumnKind {
     Text,
     Number,
     Bool,
+    /// Date only.
+    Date,
+    /// Time of day only.
+    Time,
+    /// Date and time (datetime, timestamp…).
     DateTime,
     Binary,
     Json,

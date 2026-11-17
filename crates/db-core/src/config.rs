@@ -50,8 +50,11 @@ pub struct ConnectionConfig {
     pub user: String,
     /// Initial database (SQLite: the file path).
     pub database: String,
+    /// Use SSL/TLS (details in `tls`). Off: encryption is still used when the server offers it.
     #[serde(default)]
     pub ssl: bool,
+    #[serde(default)]
+    pub tls: TlsConfig,
     #[serde(default)]
     pub save_password: bool,
     #[serde(skip)]
@@ -59,6 +62,78 @@ pub struct ConnectionConfig {
     /// Optional SSH tunnel to reach the server.
     #[serde(default)]
     pub ssh: SshConfig,
+    /// Optional HTTP tunnel (DbCraft's PHP tunnel script on a web server).
+    #[serde(default)]
+    pub http: HttpTunnelConfig,
+}
+
+/// HTTP tunnel through `tunnel/dbcraft-tunnel.php`. Secrets are not serialised: they live in the
+/// OS keychain.
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(default)]
+pub struct HttpTunnelConfig {
+    pub enabled: bool,
+    /// URL of the tunnel script, e.g. `https://example.com/dbcraft-tunnel.php`.
+    pub url: String,
+    /// Send the SQL base64-encoded (gets past filters that block SQL in requests).
+    pub base64: bool,
+    /// The script's `DBCRAFT_TUNNEL_TOKEN`, if it sets one.
+    #[serde(skip)]
+    pub token: String,
+    /// HTTP Basic authentication (web server or script).
+    pub basic_auth: bool,
+    pub user: String,
+    #[serde(skip)]
+    pub password: String,
+    pub save_password: bool,
+    /// Client certificate and key (PEM) and CA for HTTPS.
+    pub client_cert: String,
+    pub client_key: String,
+    pub ca_cert: String,
+    pub proxy: bool,
+    pub proxy_host: String,
+    pub proxy_port: u16,
+    pub proxy_user: String,
+    #[serde(skip)]
+    pub proxy_password: String,
+}
+
+/// How the server's certificate is checked when SSL is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TlsVerify {
+    /// Encrypt, accept any certificate.
+    #[default]
+    None,
+    /// The certificate must chain to the CA (file, or the system's roots).
+    Ca,
+    /// As `Ca`, and the certificate must name the host.
+    Full,
+}
+
+/// SSL/TLS files (PEM). Empty paths are not used.
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(default)]
+pub struct TlsConfig {
+    pub verify: TlsVerify,
+    pub ca_cert: String,
+    pub client_cert: String,
+    pub client_key: String,
+}
+
+impl TlsConfig {
+    /// Checks that the files named exist, so a typo reads as such rather than as a TLS error.
+    pub fn check_files(&self) -> Result<(), String> {
+        for (label, path) in [("certificato CA", &self.ca_cert), ("certificato client", &self.client_cert), ("chiave client", &self.client_key)] {
+            let p = path.trim();
+            if !p.is_empty() && !std::path::Path::new(p).is_file() {
+                return Err(format!("SSL: {label} non trovato: {p}"));
+            }
+        }
+        if self.client_cert.trim().is_empty() != self.client_key.trim().is_empty() {
+            return Err("SSL: per l'autenticazione client servono sia il certificato sia la chiave".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]

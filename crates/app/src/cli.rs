@@ -18,6 +18,13 @@ pub struct Cli {
     pub new_connection: Option<String>,
     /// …on its SSH tab.
     pub ssh_tab: bool,
+    pub ssl_tab: bool,
+    pub http_tab: bool,
+    /// Table-view panels to open with `--open-table` (comma list: filter, cell, form, text, hide, tx).
+    pub table_ui: Vec<String>,
+    /// Opens the query builder: `tables;fields`, e.g. `customers,orders;customers.city,sum:orders.total`.
+    pub builder: Option<String>,
+    pub icon_gallery: bool,
     started: Option<Instant>,
     shot_requested: bool,
 }
@@ -35,6 +42,11 @@ impl Cli {
                 "--dark" => c.dark = true,
                 "--new-connection" => c.new_connection = args.next(),
                 "--ssh-tab" => c.ssh_tab = true,
+                "--ssl-tab" => c.ssl_tab = true,
+                "--http-tab" => c.http_tab = true,
+                "--builder" => c.builder = args.next(),
+                "--icon-gallery" => c.icon_gallery = true,
+                "--table-ui" => c.table_ui = args.next().map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default(),
                 _ if !a.starts_with('-') && c.db.is_none() => c.db = Some(a),
                 _ => {}
             }

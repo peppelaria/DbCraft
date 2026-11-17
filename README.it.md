@@ -24,12 +24,13 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 
 | Area | Cosa offre |
 |---|---|
-| **Connessioni** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Connessioni salvate, prova connessione, SSL/TLS opzionale e **tunnel SSH** con autenticazione tramite password o chiave privata (con o senza passphrase; la chiave dell'host è verificata con `~/.ssh/known_hosts`). Le password stanno nel portachiavi del sistema operativo (Portachiavi di macOS, Gestione credenziali di Windows, Secret Service su Linux), mai in chiaro. |
+| **Connessioni** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Connessioni salvate, prova connessione, **SSL/TLS** (verifica del server con CA e nome host, autenticazione con certificato client), **tunnel SSH** con autenticazione tramite password o chiave privata (con o senza passphrase; la chiave dell'host è verificata con `~/.ssh/known_hosts`) e **tunnel HTTP** tramite lo script PHP di DbCraft, per i database raggiungibili solo da un web server ([tunnel/README.md](tunnel/README.md)). Le password stanno nel portachiavi del sistema operativo (Portachiavi di macOS, Gestione credenziali di Windows, Secret Service su Linux), mai in chiaro. |
 | **Albero oggetti** | Connessione → Database → Schema → Tabelle / Viste / Funzioni / Procedure / Trigger, caricati su richiesta, con menu contestuali. |
 | **Vista Oggetti** | Elenco ricercabile degli oggetti del database o schema selezionato, con numero di righe e commenti. |
-| **Visualizzatore / editor tabelle** | Griglia virtualizzata (disegna solo le celle visibili), paginazione lato server (da 100 a 50.000 righe per pagina), filtro `WHERE`, ordinamento lato server, "filtra per questo valore". Modifica nella cella, imposta NULL o stringa vuota, aggiungi ed elimina record. Le modifiche restano in sospeso (evidenziate) finché non le **applichi**: vengono allora salvate in un'unica transazione. In alternativa puoi **annullarle**. |
+| **Visualizzatore / editor tabelle** | Griglia virtualizzata (disegna solo le celle visibili), paginazione lato server (da 100 a 50.000 righe per pagina). Pannello **Filtro e ordinamento**: le condizioni si leggono come frasi di elementi cliccabili (campo · operatore · valore), ognuna collegata alla successiva dal proprio *and*/*or*, con gruppi tra parentesi annidabili e 21 operatori (=, !=, <…, contiene, inizia/finisce con e le loro negazioni, è NULL/vuoto, compreso tra, nell'elenco, SQL personalizzato), oppure `WHERE` libero; e ordinamento su più colonne. Mostra/nascondi colonne. **Viste Griglia, Modulo e Testo**. **Editor cella** laterale per testi lunghi, JSON (formattazione) e dati binari (dump esadecimale). **Selettore data/ora** sulle colonne date, time e datetime/timestamp (pulsante calendario sulla cella attiva o Alt+↓, anche nella vista Modulo e nell'Editor cella), che conserva frazioni di secondo e fuso orario. Modifica nella cella, imposta NULL, aggiungi ed elimina record (l'eliminazione chiede conferma). In auto-commit un record viene salvato quando lo lasci; **Inizia transazione** tiene tutte le modifiche in sospeso fino a **Commit** o **Rollback**. |
 | **Griglia dati** | Intestazioni con tipo e indicatore di chiave primaria, numeri di riga con indicatore del record corrente, NULL in grigio, ridimensionamento colonne (doppio clic per adattare), colonne bloccate, selezione multipla, navigazione da tastiera, copia in formato TSV (con o senza intestazioni). |
 | **Editor SQL** | Evidenziazione della sintassi, *Esegui* (⌘/Ctrl + Invio) ed *Esegui selezione*, più istruzioni con un tab di risultato per ciascuna, log dei messaggi con righe interessate e tempi, apertura e salvataggio di file `.sql`. |
+| **Query Builder** | Progettazione visuale delle query: trascina le tabelle sulla tela, spunta le colonne, trascina una colonna su quella di un'altra tabella per unirle (INNER / LEFT / RIGHT / FULL, disegnati come curve); le chiavi esterne creano i JOIN in automatico. Funzioni di aggregazione con GROUP BY automatico, alias, condizioni e ordinamento con lo stesso editor a frasi del filtro, DISTINCT e LIMIT (TOP su SQL Server), anteprima SQL in tempo reale; **OK** inserisce l'SQL nell'editor. |
 | **Designer tabelle** | Campi (nome, tipo, non null, chiave, auto-incremento, predefinito, commento), indici e chiavi esterne, con **anteprima SQL** in tempo reale delle istruzioni `CREATE TABLE` / `ALTER TABLE` nel dialetto della connessione. Su SQLite, le modifiche non esprimibili con `ALTER` vengono applicate ricostruendo la tabella, senza perdere i dati. |
 | **Esportazione** | Tabelle, viste o risultati di query in CSV, JSON, script SQL `INSERT` o Excel (`.xlsx`). |
 | **Importazione** | CSV con delimitatore e riga di intestazione configurabili, anteprima e associazione dei campi, opzione "cella vuota = NULL". Le righe vengono inserite a blocchi dentro transazioni. |
@@ -97,9 +98,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 Test di integrazione dei driver su server reali (Docker):
 
 ```sh
+scripts/test-certs.sh && mkdir -p target/ssh-test   # certificati di test, cartella chiavi SSH
 docker compose -f docker-compose.test.yml up -d --wait
-mkdir -p target/ssh-test
-DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh -- --test-threads=1
+DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh --test tls --test http -- --test-threads=1
 docker compose -f docker-compose.test.yml down -v
 ```
 
@@ -107,7 +108,9 @@ La suite crea tabelle con indici e chiavi esterne, esegue script con più istruz
 l'introspezione, applica e annulla modifiche in transazione, modifica le tabelle con l'SQL del
 designer e controlla la decodifica dei tipi di ogni motore (timestamp con fuso orario, UUID,
 JSON, array, money, interi senza segno a 64 bit, XML, …). I test SSH passano da un container
-OpenSSH con password, chiave RSA e chiave Ed25519 protetta da passphrase. L'immagine di SQL Server è solo amd64 e
+OpenSSH con password, chiave RSA e chiave Ed25519 protetta da passphrase; i test SSL usano
+PostgreSQL e MySQL con certificati di test (verify-full, certificati client, un utente MySQL
+`REQUIRE X509`). L'immagine di SQL Server è solo amd64 e
 su Apple Silicon gira in emulazione.
 
 ### Pubblicare una release (manutentori)
@@ -152,7 +155,8 @@ crates/
 - [ ] Autocompletamento SQL (parole chiave, tabelle, colonne)
 - [ ] Interruzione di una query in esecuzione
 - [x] Tunnel SSH (password, chiave privata con passphrase facoltativa)
-- [ ] Più opzioni SSL (certificati CA e client), tunnel HTTP
+- [x] Opzioni SSL (verifica CA e nome host, certificati client)
+- [x] Tunnel HTTP (script PHP di DbCraft, MySQL/MariaDB e PostgreSQL)
 - [ ] Set di icone vettoriali proprio
 - [ ] Interfaccia in inglese / localizzazione
 - [ ] Diagramma ER, sincronizzazione di dati e struttura, backup/ripristino
@@ -164,8 +168,9 @@ Issue e pull request sono benvenute.
 
 DbCraft si basa sul lavoro di molti progetti open source. Grazie!
 
-- **[GridCraft](https://github.com/storytold/gridcraft)**: la griglia dati in `crates/dbgrid`
-  deriva dalla griglia del foglio di calcolo di GridCraft (indice delle linee a somme prefisse,
+- **[GridCraft](https://github.com/storytold/gridcraft)**: il **set di icone** disegnate in codice
+  (esteso con icone per database nello stesso stile) e la griglia dati in `crates/dbgrid`
+  derivano da GridCraft; la griglia deriva da quella del foglio di calcolo (indice delle linee a somme prefisse,
   geometria con riquadri bloccati, struttura della palette del tema e modello di trascinamento
   per il ridimensionamento delle colonne), adattata ai result set SQL.
   Copyright © 2026 ArtCraft Team and the GridCraft contributors, MIT OR Apache-2.0. Vedi
@@ -175,6 +180,7 @@ DbCraft si basa sul lavoro di molti progetti open source. Grazie!
 - **[sqlx](https://github.com/launchbadge/sqlx)**: driver per SQLite, PostgreSQL e MySQL.
 - **[tiberius](https://github.com/prisma/tiberius)**: driver per SQL Server (TDS).
 - **[tokio](https://tokio.rs)**: runtime asincrono.
+- **[reqwest](https://github.com/seanmonstar/reqwest)**: client HTTP per il tunnel HTTP.
 - **[russh](https://github.com/Eugeny/russh)**: client SSH per il tunnel.
 - **[SQLite](https://sqlite.org)** (pubblico dominio), incluso tramite `libsqlite3-sys`.
 - **[syntect](https://github.com/trishume/syntect)** (tramite `egui_extras`): evidenziazione SQL.

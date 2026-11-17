@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use egui::{Align2, Color32, CursorIcon, FontId, Id, Key, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
+use crate::datetime::{DateKind, PickerOutcome};
 use crate::geo::Geo;
 use crate::line_index::LineIndex;
 use crate::model::{ColumnKind, GridModel, RowState};
@@ -122,6 +123,8 @@ pub struct DataGrid {
     columns_sig: u64,
     drag: Drag,
     edit: Option<EditState>,
+    /// Cell whose date/time picker is open.
+    picker: Option<(u32, u32)>,
     ensure_visible: bool,
 }
 
@@ -138,6 +141,7 @@ impl DataGrid {
             columns_sig: 0,
             drag: Drag::None,
             edit: None,
+            picker: None,
             ensure_visible: false,
         }
     }
@@ -154,6 +158,12 @@ impl DataGrid {
         self.sel = Selection::default();
         self.edit = None;
         self.drag = Drag::None;
+    }
+
+    /// Opens the date/time picker on a cell (of a date-like column).
+    pub fn open_date_picker(&mut self, row: u32, col: u32) {
+        self.select_cell(row, col);
+        self.picker = Some((row, col));
     }
 
     pub fn select_cell(&mut self, row: u32, col: u32) {
@@ -220,6 +230,7 @@ impl DataGrid {
 
         self.context_menu(ui, &resp, &geo, model, &mut events);
         self.editor(ui, &geo, model, &mut events);
+        self.date_picker(ui, &geo, model, &mut events);
         events
     }
 
@@ -240,7 +251,7 @@ impl DataGrid {
                 Some(w) => w,
                 None => {
                     let mut w = painter.layout_no_wrap(c.name.clone(), font.clone(), Color32::BLACK).size().x + 34.0;
-                    w = w.max(painter.layout_no_wrap(c.type_name.clone(), FontId::proportional(10.5), Color32::BLACK).size().x + 16.0);
+                    w = w.max(painter.layout_no_wrap(c.type_name.clone(), FontId::proportional(10.5), Color32::BLACK).size().x + 44.0);
                     for r in 0..sample {
                         let t = model.cell(r, i).text;
                         let t: String = t.chars().take(60).collect();
@@ -387,6 +398,67 @@ impl DataGrid {
         w.clamp(MIN_COL_W, 800.0)
     }
 
+    fn date_kind(&self, model: &dyn GridModel, col: u32) -> Option<DateKind> {
+        model.columns().get(col as usize).and_then(|c| DateKind::of(c.kind))
+    }
+
+    /// The calendar button on the active date/time cell and its picker popup.
+    fn date_picker(&mut self, ui: &mut egui::Ui, geo: &Geo, model: &dyn GridModel, events: &mut Vec<GridEvent>) {
+        let (r, c) = self.sel.active;
+        let editable = model.editable();
+        // Alt+↓ while typing in the cell opens the picker too.
+        if editable && self.edit.as_ref().is_some_and(|e| e.row == r && e.col == c) && ui.input(|i| i.modifiers.alt && i.key_pressed(Key::ArrowDown)) {
+            self.picker = Some((r, c));
+        }
+        if editable
+            && self.picker.is_none()
+            && (r as usize) < model.row_count()
+            && self.date_kind(model, c).is_some()
+        {
+            let cell = geo.cell_rect(r, c);
+            let side = (cell.height() - 4.0).max(10.0);
+            let btn = Rect::from_min_size(pos2(cell.right() - side - 2.0, cell.top() + 2.0), vec2(side, side));
+            if geo.cells.contains_rect(btn) && (c < geo.fc || btn.left() >= geo.cells.left() + geo.frozen_w) {
+                let resp = ui.interact(btn, self.id.with("date-btn"), Sense::click()).on_hover_text("Scegli data/ora (Alt+↓)");
+                let theme = GridTheme::get(ui.ctx());
+                let p = ui.painter_at(geo.cells);
+                p.rect_filled(btn, 3.0, if resp.hovered() { theme.header_sel_bg } else { theme.grid_bg });
+                p.rect_stroke(btn, 3.0, Stroke::new(1.0, theme.header_line), StrokeKind::Inside);
+                crate::datetime::paint_calendar_glyph(&p, btn, theme.sel_border);
+                if resp.clicked() {
+                    self.picker = Some((r, c));
+                }
+            }
+        }
+        let Some((pr, pc)) = self.picker else { return };
+        let Some(kind) = self.date_kind(model, pc) else {
+            self.picker = None;
+            return;
+        };
+        let current = match &self.edit {
+            Some(e) if e.row == pr && e.col == pc => e.text.clone(),
+            _ => {
+                let v = model.cell(pr as usize, pc as usize);
+                if v.null { String::new() } else { v.text.into_owned() }
+            }
+        };
+        let anchor = geo.cell_rect(pr, pc).intersect(geo.cells);
+        match crate::datetime::popup(ui.ctx(), self.id.with(("picker", pr, pc)), anchor, kind, &current, true) {
+            Some(PickerOutcome::Pick(text)) => {
+                self.edit = None;
+                self.picker = None;
+                events.push(GridEvent::CellEdited { row: pr as usize, col: pc as usize, value: Some(text) });
+            }
+            Some(PickerOutcome::Null) => {
+                self.edit = None;
+                self.picker = None;
+                events.push(GridEvent::CellEdited { row: pr as usize, col: pc as usize, value: None });
+            }
+            Some(PickerOutcome::Cancel) => self.picker = None,
+            None => {}
+        }
+    }
+
     fn keyboard(&mut self, ui: &egui::Ui, geo: &Geo, model: &dyn GridModel, events: &mut Vec<GridEvent>) {
         let (nrows, ncols) = (geo.rows(), geo.cols());
         if nrows == 0 || ncols == 0 {
@@ -421,6 +493,12 @@ impl DataGrid {
         for key in keys.drain(..) {
             let before = (r, c);
             match key {
+                Key::ArrowDown if mods.alt => {
+                    if model.editable() && self.date_kind(model, c).is_some() {
+                        self.picker = Some((r, c));
+                    }
+                    return;
+                }
                 Key::ArrowDown => r = if mods.command { nrows - 1 } else { (r + 1).min(nrows - 1) },
                 Key::ArrowUp => r = if mods.command { 0 } else { r.saturating_sub(1) },
                 Key::ArrowRight => c = if mods.command { ncols - 1 } else { (c + 1).min(ncols - 1) },
@@ -731,7 +809,9 @@ impl DataGrid {
                 }
                 let color = if selected { theme.header_sel_text } else { theme.header_text };
                 cp.text(pos2(x, inner.top() + 8.0), Align2::LEFT_CENTER, &col.name, font.clone(), color);
-                cp.text(pos2(inner.left(), inner.bottom() - 6.0), Align2::LEFT_CENTER, &col.type_name, small.clone(), theme.header_type_text);
+                let badge = kind_badge(col.kind);
+                let bw = paint_badge(&cp, pos2(inner.left(), inner.bottom() - 6.0), badge, theme);
+                cp.text(pos2(inner.left() + bw + 4.0, inner.bottom() - 6.0), Align2::LEFT_CENTER, &col.type_name, small.clone(), theme.header_type_text);
                 if let Some((sc, dir)) = self.sort
                     && sc == c as usize
                 {
@@ -780,6 +860,31 @@ impl DataGrid {
         }
         painter.vline(g.right() - 0.5, g.y_range(), Stroke::new(1.0, theme.header_line));
     }
+}
+
+/// Short marker of a column's kind, drawn before its type name (as database GUIs do).
+fn kind_badge(kind: ColumnKind) -> &'static str {
+    match kind {
+        ColumnKind::Text => "ABC",
+        ColumnKind::Number => "#",
+        ColumnKind::Bool => "T/F",
+        ColumnKind::Date => "DATE",
+        ColumnKind::Time => "TIME",
+        ColumnKind::DateTime => "DATETIME",
+        ColumnKind::Binary => "BIN",
+        ColumnKind::Json => "{ }",
+    }
+}
+
+/// Paints `text` in a small rounded box left-aligned at `pos` (vertically centred); returns its width.
+fn paint_badge(p: &Painter, pos: Pos2, text: &str, theme: &GridTheme) -> f32 {
+    let font = FontId::monospace(8.0);
+    let galley = p.layout_no_wrap(text.to_string(), font, theme.header_type_text);
+    let size = galley.size() + vec2(5.0, 1.0);
+    let rect = Rect::from_min_size(pos2(pos.x, pos.y - size.y / 2.0), size);
+    p.rect_stroke(rect, 2.0, Stroke::new(0.8, theme.header_type_text), StrokeKind::Inside);
+    p.galley(rect.min + vec2(2.5, 0.5), galley, theme.header_type_text);
+    size.x
 }
 
 fn gutter_width(rows: u32) -> f32 {

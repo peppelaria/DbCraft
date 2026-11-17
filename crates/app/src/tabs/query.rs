@@ -1,9 +1,10 @@
 //! Query editor: SQL with syntax highlighting, run all / run selection, one result tab per
 //! statement plus a message log.
 
+use crate::icons::{self, Db, G};
 use std::time::Instant;
 
-use db_core::ResultSet;
+use db_core::{Dialect, ResultSet};
 use dbgrid::{DataGrid, GridColumn};
 use egui::RichText;
 
@@ -11,6 +12,7 @@ use crate::app::{Action, Env, Location};
 use crate::backend::{Msg, TabId};
 use crate::dialogs::ExportSource;
 use crate::models::{ResultModel, grid_columns};
+use crate::tabs::builder::{BuilderRequest, QueryBuilder};
 
 struct ResultView {
     rs: ResultSet,
@@ -34,6 +36,8 @@ pub struct QueryTab {
     ddl: bool,
     /// The first result belongs to the `SET search_path` prefix.
     skip_first: bool,
+    builder: Option<QueryBuilder>,
+    show_builder: bool,
 }
 
 fn changes_schema(sql: &str) -> bool {
@@ -45,7 +49,7 @@ fn changes_schema(sql: &str) -> bool {
 
 impl QueryTab {
     pub fn new(id: TabId, loc: Location) -> Self {
-        QueryTab { id, loc, sql: String::new(), results: Vec::new(), active_result: 0, messages: Vec::new(), running: None, last: String::new(), path: None, pending_run: false, ddl: false, skip_first: false }
+        QueryTab { id, loc, sql: String::new(), results: Vec::new(), active_result: 0, messages: Vec::new(), running: None, last: String::new(), path: None, pending_run: false, ddl: false, skip_first: false, builder: None, show_builder: false }
     }
 
     pub fn set_sql(&mut self, sql: String, run: bool) {
@@ -83,7 +87,22 @@ impl QueryTab {
     }
 
     pub fn handle(&mut self, msg: Msg, env: &mut Env<'_>) {
-        let Msg::QueryDone { res, .. } = msg else { return };
+        let res = match msg {
+            Msg::QueryDone { res, .. } => res,
+            Msg::BuilderTables { res, .. } => {
+                if let Some(b) = self.builder.as_mut() {
+                    b.on_tables(res);
+                }
+                return;
+            }
+            Msg::BuilderTable { name, res, .. } => {
+                if let Some(b) = self.builder.as_mut() {
+                    b.on_table_info(&name, res);
+                }
+                return;
+            }
+            _ => return,
+        };
         if std::mem::take(&mut self.ddl) {
             env.actions.push(Action::Refresh(self.loc.clone()));
         }
@@ -125,20 +144,86 @@ impl QueryTab {
         }
     }
 
+    pub fn open_builder(&mut self, env: &mut Env<'_>) {
+        self.show_builder = true;
+        if self.builder.is_some() {
+            return;
+        }
+        let Some(cfg) = env.cfg(&self.loc.conn).cloned() else { return };
+        self.builder = Some(QueryBuilder::new(Dialect::from(cfg.kind), self.loc.schema.clone()));
+        let (tab, schema) = (self.id, self.loc.schema.clone());
+        env.backend.with_driver(&cfg, &self.loc.db, move |d| async move {
+            let res = match d {
+                Ok(d) => d.list_objects(schema.as_deref()).await,
+                Err(e) => Err(e),
+            };
+            Msg::BuilderTables { tab, res }
+        });
+    }
+
+    /// Scripted builder state for screenshots (`--builder tables;fields`).
+    pub fn debug_builder(&mut self, env: &mut Env<'_>, spec: &str) {
+        self.open_builder(env);
+        let (tables, fields) = spec.split_once(';').unwrap_or((spec, ""));
+        if let Some(b) = self.builder.as_mut() {
+            for t in tables.split(',').filter(|t| !t.is_empty()) {
+                b.add_table(t, None);
+            }
+            for f in fields.split(',').filter(|f| !f.is_empty()) {
+                b.debug_field(f);
+            }
+        }
+        self.builder_requests(env);
+    }
+
+    /// Sends the table definitions the builder asked for.
+    fn builder_requests(&mut self, env: &mut Env<'_>) {
+        let Some(b) = self.builder.as_mut() else { return };
+        let Some(cfg) = env.cfg(&self.loc.conn).cloned() else { return };
+        for BuilderRequest::Describe(name) in std::mem::take(&mut b.requests) {
+            let (tab, schema) = (self.id, self.loc.schema.clone());
+            env.backend.with_driver(&cfg, &self.loc.db, move |d| async move {
+                let res = match d {
+                    Ok(d) => d.describe_table(schema.as_deref(), &name).await,
+                    Err(e) => Err(e),
+                };
+                Msg::BuilderTable { tab, name, res }
+            });
+        }
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui, env: &mut Env<'_>) {
+        if self.show_builder {
+            let done = self.builder.as_mut().and_then(|b| b.ui(ui));
+            self.builder_requests(env);
+            match done {
+                Some(true) => {
+                    if let Some(b) = &self.builder {
+                        self.sql = b.sql();
+                    }
+                    self.show_builder = false;
+                }
+                Some(false) => self.show_builder = false,
+                None => {}
+            }
+            return;
+        }
         let mut run: Option<String> = None;
         if std::mem::take(&mut self.pending_run) {
             run = Some(self.sql.clone());
         }
         ui.horizontal(|ui| {
-            if ui.add_enabled(self.running.is_none(), egui::Button::new(RichText::new("▶ Esegui").strong())).on_hover_text("⌘↩ / Ctrl+Invio").clicked() {
+            if icons::button_ex(ui, Db::Run, "Esegui", false, self.running.is_none()).on_hover_text("⌘↩ / Ctrl+Invio").clicked() {
                 run = Some(self.sql.clone());
             }
-            if ui.add_enabled(self.running.is_none(), egui::Button::new("▶ Esegui selezione")).clicked() {
+            if icons::button_ex(ui, Db::RunSelection, "Esegui selezione", false, self.running.is_none()).clicked() {
                 run = Some(String::from("\u{0}selection"));
             }
+            if icons::button(ui, Db::QueryBuilder, "Query Builder").on_hover_text("Costruisci la query visualmente").clicked() {
+                self.open_builder(env);
+            }
             ui.separator();
-            if ui.button("📂 Apri").clicked()
+            if icons::button(ui, G::OpenFolder, "Apri").clicked()
                 && let Some(p) = rfd::FileDialog::new().add_filter("SQL", &["sql"]).pick_file()
             {
                 match std::fs::read_to_string(&p) {
@@ -149,7 +234,7 @@ impl QueryTab {
                     Err(e) => env.actions.push(Action::Notice(e.to_string(), true)),
                 }
             }
-            if ui.button("💾 Salva").clicked() {
+            if icons::button(ui, G::Save, "Salva").clicked() {
                 let path = self.path.clone().or_else(|| rfd::FileDialog::new().add_filter("SQL", &["sql"]).set_file_name("query.sql").save_file());
                 if let Some(p) = path {
                     match std::fs::write(&p, &self.sql) {
@@ -218,7 +303,7 @@ impl QueryTab {
             }
             if let Some(v) = self.active_result.checked_sub(1).and_then(|i| self.results.get(i)) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("📤 Esporta risultato").clicked() {
+                    if icons::button(ui, Db::Export, "Esporta risultato").clicked() {
                         env.actions.push(Action::Export(ExportSource::Rows(Box::new(v.rs.clone()), "risultato".into(), self.loc.conn.clone())));
                     }
                     ui.label(RichText::new(format!("{} righe", v.rs.rows.len())).small());

@@ -17,6 +17,8 @@ pub enum Msg {
     TableData { tab: TabId, info: Option<DbResult<TableInfo>>, page: DbResult<ResultSet>, total: Option<u64> },
     Applied { tab: TabId, res: DbResult<u64> },
     QueryDone { tab: TabId, res: DbResult<Vec<ResultSet>> },
+    BuilderTables { tab: TabId, res: DbResult<Vec<SchemaObject>> },
+    BuilderTable { tab: TabId, name: String, res: DbResult<TableInfo> },
     DesignLoaded { tab: TabId, res: DbResult<TableInfo> },
     DesignSaved { tab: TabId, res: Result<(), String> },
     ObjectsChanged { conn: String, db: String, schema: Option<String> },

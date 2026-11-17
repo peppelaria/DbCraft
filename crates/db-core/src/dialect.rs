@@ -100,12 +100,11 @@ impl Dialect {
             sql.push_str(" WHERE ");
             sql.push_str(f);
         }
-        match &r.order {
-            Some((c, desc)) => {
-                sql.push_str(&format!(" ORDER BY {}{}", self.quote(c), if *desc { " DESC" } else { "" }));
-            }
-            None if self == Dialect::SqlServer => sql.push_str(" ORDER BY (SELECT NULL)"),
-            None => {}
+        if !r.order.is_empty() {
+            let keys: Vec<String> = r.order.iter().map(|(c, desc)| format!("{}{}", self.quote(c), if *desc { " DESC" } else { "" })).collect();
+            sql.push_str(&format!(" ORDER BY {}", keys.join(", ")));
+        } else if self == Dialect::SqlServer {
+            sql.push_str(" ORDER BY (SELECT NULL)");
         }
         match self {
             Dialect::SqlServer => sql.push_str(&format!(" OFFSET {} ROWS FETCH NEXT {} ROWS ONLY", r.offset, r.limit)),
@@ -435,6 +434,8 @@ mod tests {
         let r = PageRequest { table: "t".into(), limit: 10, offset: 20, ..Default::default() };
         assert_eq!(Dialect::Sqlite.select_page(&r), "SELECT * FROM \"t\" LIMIT 10 OFFSET 20");
         assert!(Dialect::SqlServer.select_page(&r).ends_with("ORDER BY (SELECT NULL) OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY"));
+        let r = PageRequest { table: "t".into(), order: vec![("a".into(), false), ("b".into(), true)], limit: 1, ..Default::default() };
+        assert_eq!(Dialect::MySql.select_page(&r), "SELECT * FROM `t` ORDER BY `a`, `b` DESC LIMIT 1 OFFSET 0");
     }
 
     #[test]

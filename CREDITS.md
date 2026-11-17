@@ -18,6 +18,15 @@ open-source projects below. We are grateful to their authors and contributors.
   - `theme.rs` follows the token layout of `crates/ui-egui/src/theme.rs`.
   - `grid.rs` follows the painting order and drag model of `crates/ui-egui/src/grid/*`.
 
+- Used in: `crates/app/src/icons` — the **icon set**:
+  - `gridcraft.rs` is GridCraft's code-drawn icon catalogue (`crates/ui-egui/src/icons.rs`),
+    adapted to DbCraft (theme tokens replaced, proportional font for glyph icons);
+  - `mod.rs` reuses GridCraft's icon palette (category colours and paper, light and dark, from
+    `crates/ui-egui/src/theme.rs`);
+  - `db.rs` adds database icons (connection, database, schema, view, procedure, trigger, key,
+    index, user, backup, automation, model, BI, transaction, commit/rollback, query builder…)
+    drawn for DbCraft in the same style, on the same 16×16 grid with the same helpers.
+
 The adaptations remove the coupling to GridCraft's workbook engine and replace it with a generic
 `GridModel` trait for SQL result sets. GridCraft's MIT license text is kept in
 [`crates/dbgrid/LICENSE-GRIDCRAFT-MIT`](crates/dbgrid/LICENSE-GRIDCRAFT-MIT), and provenance is
@@ -31,6 +40,8 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 | [sqlx](https://github.com/launchbadge/sqlx) | SQLite, PostgreSQL and MySQL/MariaDB drivers | MIT OR Apache-2.0 |
 | [tiberius](https://github.com/prisma/tiberius) | SQL Server (TDS) driver | MIT OR Apache-2.0 |
 | [russh](https://github.com/Eugeny/russh) | SSH client (tunnel) | Apache-2.0 |
+| [reqwest](https://github.com/seanmonstar/reqwest) | HTTP client (HTTP tunnel) | MIT OR Apache-2.0 |
+| [rustls](https://github.com/rustls/rustls) | TLS; DbCraft selects its `ring` crypto provider | Apache-2.0 OR ISC OR MIT |
 | [tokio](https://github.com/tokio-rs/tokio), [tokio-util](https://github.com/tokio-rs/tokio) | Async runtime | MIT |
 | [futures-util](https://github.com/rust-lang/futures-rs) | Stream utilities | MIT OR Apache-2.0 |
 | [async-trait](https://github.com/dtolnay/async-trait) | Async trait methods | MIT OR Apache-2.0 |

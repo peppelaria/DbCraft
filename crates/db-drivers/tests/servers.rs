@@ -181,7 +181,7 @@ async fn roundtrip(drv: Arc<dyn Driver>, schema: Option<&str>) {
     assert_eq!(n, 3);
     assert_eq!(drv.count_rows(schema, "people", None).await.unwrap(), 2);
     let page = drv
-        .fetch_page(&PageRequest { schema: schema.map(Into::into), table: "people".into(), order: Some(("id".into(), true)), limit: 1, ..Default::default() })
+        .fetch_page(&PageRequest { schema: schema.map(Into::into), table: "people".into(), order: vec![("id".into(), true)], limit: 1, ..Default::default() })
         .await
         .unwrap();
     assert_eq!(page.rows.len(), 1);

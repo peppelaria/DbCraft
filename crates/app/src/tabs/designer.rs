@@ -1,6 +1,7 @@
 //! Table designer: fields, indexes and foreign keys, with a live SQL preview of the
 //! CREATE/ALTER statements for the connection's dialect.
 
+use crate::icons::{self, Db, G};
 use db_core::{ColumnDef, Dialect, ForeignKeyDef, IndexDef, ObjectKind, TableDesign};
 use egui::RichText;
 
@@ -156,41 +157,41 @@ impl DesignerTab {
         }
         let dirty = self.original.as_ref() != Some(&self.design);
         ui.horizontal(|ui| {
-            if ui.add_enabled(dirty && !self.saving, egui::Button::new(RichText::new("💾 Salva").strong())).clicked() {
+            if icons::button_ex(ui, G::Save, "Salva", false, dirty && !self.saving).clicked() {
                 self.save(env);
             }
             ui.separator();
             match self.sub {
                 Sub::Fields => {
-                    if ui.button("➕ Aggiungi campo").clicked() {
+                    if icons::button(ui, G::Plus, "Aggiungi campo").clicked() {
                         self.design.columns.push(ColumnDef { data_type: self.dialect.types().get(1).copied().unwrap_or("TEXT").into(), ..Default::default() });
                         self.selected = self.design.columns.len() - 1;
                     }
-                    if ui.button("↥ Inserisci campo").clicked() {
+                    if icons::button(ui, G::Insert, "Inserisci campo").clicked() {
                         let at = self.selected.min(self.design.columns.len());
                         self.design.columns.insert(at, ColumnDef { data_type: self.dialect.types().get(1).copied().unwrap_or("TEXT").into(), ..Default::default() });
                     }
-                    if ui.add_enabled(!self.design.columns.is_empty(), egui::Button::new("➖ Elimina campo")).clicked() && self.selected < self.design.columns.len() {
+                    if icons::button_ex(ui, G::Delete, "Elimina campo", false, !self.design.columns.is_empty()).clicked() && self.selected < self.design.columns.len() {
                         self.design.columns.remove(self.selected);
                         self.selected = self.selected.min(self.design.columns.len().saturating_sub(1));
                     }
-                    if ui.add_enabled(self.selected > 0, egui::Button::new("⬆")).clicked() {
+                    if icons::small(ui, G::ChevronUp, "Sposta su", self.selected > 0).clicked() {
                         self.design.columns.swap(self.selected, self.selected - 1);
                         self.selected -= 1;
                     }
-                    if ui.add_enabled(self.selected + 1 < self.design.columns.len(), egui::Button::new("⬇")).clicked() {
+                    if icons::small(ui, G::Chevron, "Sposta giù", self.selected + 1 < self.design.columns.len()).clicked() {
                         self.design.columns.swap(self.selected, self.selected + 1);
                         self.selected += 1;
                     }
                 }
                 Sub::Indexes => {
-                    if ui.button("➕ Aggiungi indice").clicked() {
+                    if icons::button(ui, Db::Index, "Aggiungi indice").clicked() {
                         let n = self.design.indexes.len() + 1;
                         self.design.indexes.push(IndexDef { name: format!("idx_{}_{n}", self.design.name), ..Default::default() });
                     }
                 }
                 Sub::ForeignKeys => {
-                    if ui.button("➕ Aggiungi chiave esterna").clicked() {
+                    if icons::button(ui, Db::ForeignKey, "Aggiungi chiave esterna").clicked() {
                         let n = self.design.foreign_keys.len() + 1;
                         self.design.foreign_keys.push(ForeignKeyDef { name: format!("fk_{}_{n}", self.design.name), ..Default::default() });
                     }
@@ -263,7 +264,12 @@ impl DesignerTab {
                         });
                     });
                     ui.checkbox(&mut c.not_null, "");
-                    ui.checkbox(&mut c.primary_key, "🔑");
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut c.primary_key, "");
+                        if c.primary_key {
+                            icons::show(ui, Db::Key, 14.0);
+                        }
+                    });
                     ui.checkbox(&mut c.auto_increment, "");
                     ui.add(egui::TextEdit::singleline(&mut c.default).desired_width(120.0).hint_text("es. 0, 'abc', CURRENT_TIMESTAMP"));
                     ui.add_enabled(self.dialect != Dialect::Sqlite && self.dialect != Dialect::SqlServer, egui::TextEdit::singleline(&mut c.comment).desired_width(180.0));
@@ -285,7 +291,7 @@ impl DesignerTab {
                     ui.add(egui::TextEdit::singleline(&mut x.name).desired_width(200.0));
                     ui.add(egui::TextEdit::singleline(&mut x.columns).desired_width(260.0));
                     ui.checkbox(&mut x.unique, "");
-                    if ui.small_button("🗑").clicked() {
+                    if icons::small(ui, G::Delete, "Elimina", true).clicked() {
                         remove = Some(i);
                     }
                     ui.end_row();
@@ -317,7 +323,7 @@ impl DesignerTab {
                             }
                         });
                     }
-                    if ui.small_button("🗑").clicked() {
+                    if icons::small(ui, G::Delete, "Elimina", true).clicked() {
                         remove = Some(i);
                     }
                     ui.end_row();

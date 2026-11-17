@@ -57,7 +57,19 @@ impl MssqlDriver {
         if !db.is_empty() {
             config.database(db);
         }
-        if !cfg.ssl {
+        if cfg.ssl {
+            cfg.tls.check_files().map_err(DbError::Connection)?;
+            config.encryption(tiberius::EncryptionLevel::Required);
+            // `trust_cert` and `trust_cert_ca` are mutually exclusive (tiberius panics on both).
+            match (cfg.tls.verify, cfg.tls.ca_cert.trim()) {
+                (TlsVerify::None, _) => config.trust_cert(),
+                (_, "") => {} // the system's root certificates
+                (_, ca) => config.trust_cert_ca(ca),
+            }
+            if !cfg.tls.client_cert.trim().is_empty() {
+                config.client_certificate(cfg.tls.client_cert.trim(), cfg.tls.client_key.trim());
+            }
+        } else {
             // Local/dev servers usually present a self-signed certificate.
             config.trust_cert();
         }

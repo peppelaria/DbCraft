@@ -24,12 +24,13 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 
 | Area | What you get |
 |---|---|
-| **Connections** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Saved connections, connection test, optional SSL/TLS, and an **SSH tunnel** with password or private-key authentication (with or without a passphrase; the host key is checked against `~/.ssh/known_hosts`). Passwords are kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux), never in plain text. |
+| **Connections** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Saved connections, connection test, **SSL/TLS** (server verification against a CA and host name, client certificate authentication), an **SSH tunnel** with password or private-key authentication (with or without a passphrase; the host key is checked against `~/.ssh/known_hosts`), and an **HTTP tunnel** through DbCraft's PHP script for databases reachable only from a web server ([tunnel/README.md](tunnel/README.md)). Passwords are kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux), never in plain text. |
 | **Object tree** | Connection → Database → Schema → Tables / Views / Functions / Procedures / Triggers, loaded lazily, with context menus. |
 | **Objects view** | A searchable list of the objects in the selected database or schema, with row counts and comments. |
-| **Table viewer / editor** | Virtualised grid (only visible cells are painted), server-side paging (100 – 50,000 rows per page), `WHERE` filter, server-side sorting, "filter by this value". Edit cells in place, set NULL or an empty string, add and delete records. Changes stay pending (highlighted) until you **Apply**; they are then committed in a single transaction, or **Discard** them. |
+| **Table viewer / editor** | Virtualised grid (only visible cells are painted), server-side paging (100 – 50,000 rows per page). **Filter & Sort** panel: conditions read as sentences of clickable tokens (field · operator · value), each linked to the next by its own *and*/*or*, with nested bracketed groups and 21 operators (=, !=, <…, contains, begins/ends with and their negations, is NULL/empty, between, in list, custom SQL), or a raw `WHERE`; plus multi-column sorting. Show/hide columns. **Grid, Form and Text views**. **Cell editor** side panel for long text, JSON (pretty-print) and binary (hex dump). **Date/time picker** on date, time and datetime/timestamp columns (calendar button on the active cell or Alt+↓, also in the form view and cell editor), keeping fractional seconds and time zones. Edit in place, set NULL, add and delete records (deletes ask for confirmation). Auto-commit saves a record when you leave it; **Begin Transaction** holds every change until **Commit** or **Rollback**. |
 | **Data grid** | Column headers with type and primary-key markers, row-number gutter with a current-record marker, NULLs in grey, column resize (double-click to auto-fit), frozen columns, multi-cell selection, keyboard navigation, copy as TSV (with or without headers). |
 | **SQL editor** | Syntax highlighting, *Run* (⌘/Ctrl + Enter) and *Run selection*, multiple statements with one result tab each, a message log with affected rows and timing, open and save `.sql` files. |
+| **Query Builder** | Visual query design: drag tables onto a canvas, tick columns, drag a column onto another table's column to join (INNER / LEFT / RIGHT / FULL, shown as curves); foreign keys join automatically. Aggregates with automatic GROUP BY, aliases, conditions and sorting with the same token editor as the table filter, DISTINCT and LIMIT (TOP on SQL Server), live SQL preview; **OK** puts the SQL in the editor. |
 | **Table designer** | Fields (name, type, not-null, key, auto-increment, default, comment), indexes and foreign keys, with a live **SQL preview** of the `CREATE TABLE` / `ALTER TABLE` statements for the connection's dialect. On SQLite, changes it can't express with `ALTER` are applied by rebuilding the table, keeping its data. |
 | **Export** | Tables, views or query results to CSV, JSON, SQL `INSERT` script or Excel (`.xlsx`). |
 | **Import** | CSV with a configurable delimiter and header row, a field-mapping preview, and optional empty-cell → NULL. Rows are inserted in batches inside transactions. |
@@ -97,9 +98,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 Driver integration tests against real servers (Docker):
 
 ```sh
+scripts/test-certs.sh && mkdir -p target/ssh-test   # test certificates, SSH key folder
 docker compose -f docker-compose.test.yml up -d --wait
-mkdir -p target/ssh-test
-DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh -- --test-threads=1
+DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh --test tls --test http -- --test-threads=1
 docker compose -f docker-compose.test.yml down -v
 ```
 
@@ -107,7 +108,8 @@ The suite creates tables with indexes and foreign keys, runs multi-statement scr
 introspection, applies and rolls back transactional edits, alters tables through the designer's
 SQL, and decodes each engine's data types (timestamps with time zones, UUID, JSON, arrays,
 money, unsigned 64-bit, XML, …). The SSH tests go through an OpenSSH server container with
-password, RSA and passphrase-protected Ed25519 keys. The SQL Server image is amd64-only and runs under emulation on
+password, RSA and passphrase-protected Ed25519 keys; the SSL tests use PostgreSQL and MySQL
+with test certificates (verify-full, client certificates, a MySQL `REQUIRE X509` user). The SQL Server image is amd64-only and runs under emulation on
 Apple Silicon.
 
 ### Releasing (maintainers)
@@ -151,7 +153,8 @@ crates/
 - [ ] SQL autocompletion (keywords, tables, columns)
 - [ ] Cancel a running query
 - [x] SSH tunnel (password, private key with optional passphrase)
-- [ ] More SSL options (CA and client certificates), HTTP tunnel
+- [x] SSL options (CA verification, host name verification, client certificates)
+- [x] HTTP tunnel (DbCraft PHP script, MySQL/MariaDB and PostgreSQL)
 - [ ] Custom vector icon set
 - [ ] English UI / localisation
 - [ ] ER diagram, data and structure sync, backup/restore
@@ -163,9 +166,10 @@ Issues and pull requests are welcome.
 
 DbCraft is built on the work of many open-source projects. Thank you!
 
-- **[GridCraft](https://github.com/storytold/gridcraft)**: the data grid in `crates/dbgrid` is
-  derived from GridCraft's worksheet grid (the prefix-sum line index, grid geometry with frozen
-  panes, theme palette layout and column-resize drag model), adapted to SQL result sets.
+- **[GridCraft](https://github.com/storytold/gridcraft)**: the code-drawn **icon set** (extended
+  with database icons in the same style) and the data grid in `crates/dbgrid` are
+  derived from GridCraft (the grid: prefix-sum line index, geometry with frozen panes, palette
+  layout and column-resize drag model, adapted to SQL result sets).
   Copyright © 2026 ArtCraft Team and the GridCraft contributors, MIT OR Apache-2.0. See
   [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 - **[egui / eframe](https://github.com/emilk/egui)** by Emil Ernerfeldt and contributors: the
@@ -173,6 +177,7 @@ DbCraft is built on the work of many open-source projects. Thank you!
 - **[sqlx](https://github.com/launchbadge/sqlx)**: SQLite, PostgreSQL and MySQL drivers.
 - **[tiberius](https://github.com/prisma/tiberius)**: SQL Server (TDS) driver.
 - **[tokio](https://tokio.rs)**: async runtime.
+- **[reqwest](https://github.com/seanmonstar/reqwest)**: HTTP client for the HTTP tunnel.
 - **[russh](https://github.com/Eugeny/russh)**: SSH client for the tunnel.
 - **[SQLite](https://sqlite.org)** (public domain), bundled through `libsqlite3-sys`.
 - **[syntect](https://github.com/trishume/syntect)** (via `egui_extras`): SQL syntax highlighting.

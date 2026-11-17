@@ -11,8 +11,12 @@ pub fn kind_of(type_name: &str) -> ColumnKind {
         ColumnKind::Number
     } else if t.contains("bool") || t == "bit" {
         ColumnKind::Bool
-    } else if ["date", "time"].iter().any(|k| t.contains(k)) {
+    } else if ["datetime", "timestamp", "smalldatetime"].iter().any(|k| t.contains(k)) {
         ColumnKind::DateTime
+    } else if t.contains("date") {
+        ColumnKind::Date
+    } else if t.starts_with("time") {
+        ColumnKind::Time
     } else if ["blob", "binary", "bytea", "image"].iter().any(|k| t.contains(k)) {
         ColumnKind::Binary
     } else if t.contains("json") {
@@ -97,9 +101,26 @@ impl Edits {
 
 pub struct TableModel<'a> {
     pub rs: &'a ResultSet,
+    /// The visible columns, in display order.
     pub columns: &'a [GridColumn],
+    /// Grid column → result-set column.
+    pub col_map: &'a [usize],
     pub edits: &'a Edits,
     pub editable: bool,
+}
+
+impl TableModel<'_> {
+    /// The current value of a cell (pending edit, or original), by result-set column.
+    pub fn value(&self, row: usize, data_col: usize) -> Option<Value> {
+        let n = self.rs.rows.len();
+        if row >= n {
+            return self.edits.inserted.get(row - n).and_then(|r| r.get(data_col)).cloned().flatten();
+        }
+        if let Some(v) = self.edits.cells.get(&(row, data_col)) {
+            return Some(v.clone());
+        }
+        self.rs.rows.get(row).and_then(|r| r.get(data_col)).cloned()
+    }
 }
 
 impl GridModel for TableModel<'_> {
@@ -110,17 +131,18 @@ impl GridModel for TableModel<'_> {
         self.columns
     }
     fn cell(&self, row: usize, col: usize) -> CellView<'_> {
+        let Some(&dc) = self.col_map.get(col) else { return CellView::null() };
         let n = self.rs.rows.len();
         if row >= n {
-            return match self.edits.inserted.get(row - n).and_then(|r| r.get(col)) {
+            return match self.edits.inserted.get(row - n).and_then(|r| r.get(dc)) {
                 Some(Some(v)) => CellView { dirty: true, ..view(v) },
                 _ => CellView { text: "(Default)".into(), null: true, dirty: false },
             };
         }
-        if let Some(v) = self.edits.cells.get(&(row, col)) {
+        if let Some(v) = self.edits.cells.get(&(row, dc)) {
             return CellView { dirty: true, ..view(v) };
         }
-        self.rs.rows.get(row).and_then(|r| r.get(col)).map_or_else(CellView::null, view)
+        self.rs.rows.get(row).and_then(|r| r.get(dc)).map_or_else(CellView::null, view)
     }
     fn row_state(&self, row: usize) -> RowState {
         if row >= self.rs.rows.len() {

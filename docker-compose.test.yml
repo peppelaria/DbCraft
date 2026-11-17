@@ -1,6 +1,6 @@
 # Database servers for DbCraft's driver integration tests.
-#   mkdir -p target/ssh-test && docker compose -f docker-compose.test.yml up -d --wait
-#   DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh -- --test-threads=1
+#   scripts/test-certs.sh && mkdir -p target/ssh-test && docker compose -f docker-compose.test.yml up -d --wait
+#   DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh --test tls --test http -- --test-threads=1
 #   docker compose -f docker-compose.test.yml down -v
 # Ports are offset (5xxxx) so they don't clash with local servers.
 name: dbcraft-test
@@ -12,6 +12,18 @@ services:
       POSTGRES_PASSWORD: DbCraft_test1
       POSTGRES_DB: dbcraft
     ports: ["55432:5432"]
+    # SSL with the test certificates when scripts/test-certs.sh has made them.
+    volumes: ["./target/tls-test:/certs:ro"]
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        if [ -f /certs/server.crt ]; then
+          install -o postgres -m 600 /certs/server.key /tmp/server.key
+          install -o postgres -m 644 /certs/server.crt /tmp/server.crt
+          install -o postgres -m 644 /certs/ca.crt /tmp/ca.crt
+          exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key -c ssl_ca_file=/tmp/ca.crt
+        fi
+        exec docker-entrypoint.sh postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d dbcraft"]
       interval: 2s
@@ -23,6 +35,14 @@ services:
       MYSQL_ROOT_PASSWORD: DbCraft_test1
       MYSQL_DATABASE: dbcraft
     ports: ["53306:3306"]
+    volumes: ["./target/tls-test:/certs:ro"]
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        if [ -f /certs/server.crt ]; then
+          exec docker-entrypoint.sh mysqld --ssl-ca=/certs/ca.crt --ssl-cert=/certs/server.crt --ssl-key=/certs/server.key
+        fi
+        exec docker-entrypoint.sh mysqld
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pDbCraft_test1"]
       interval: 3s
@@ -72,5 +92,27 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD-SHELL", "pgrep sshd"]
+      interval: 2s
+      retries: 30
+
+  # Web server with DbCraft's HTTP tunnel script (tunnel/dbcraft-tunnel.php), protected by a token
+  # and HTTP Basic authentication; it may reach the databases above on host.docker.internal.
+  http-tunnel:
+    build:
+      context: ./tunnel
+      dockerfile_inline: |
+        FROM php:8.3-apache
+        RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev \
+            && docker-php-ext-install pdo_mysql pdo_pgsql && rm -rf /var/lib/apt/lists/*
+    volumes: ["./tunnel:/var/www/html:ro"]
+    environment:
+      DBCRAFT_TUNNEL_HOSTS: host.docker.internal
+      DBCRAFT_TUNNEL_TOKEN: test-token
+      DBCRAFT_TUNNEL_USER: tunnel
+      DBCRAFT_TUNNEL_PASSWORD: DbCraft_test1
+    ports: ["58080:80"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost/dbcraft-tunnel.php >/dev/null || exit 1"]
       interval: 2s
       retries: 30
