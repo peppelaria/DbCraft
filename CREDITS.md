@@ -30,6 +30,7 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 | [egui](https://github.com/emilk/egui), [eframe](https://github.com/emilk/egui), [egui_extras](https://github.com/emilk/egui) | GUI toolkit, native window, tables and syntax highlighting | MIT OR Apache-2.0 |
 | [sqlx](https://github.com/launchbadge/sqlx) | SQLite, PostgreSQL and MySQL/MariaDB drivers | MIT OR Apache-2.0 |
 | [tiberius](https://github.com/prisma/tiberius) | SQL Server (TDS) driver | MIT OR Apache-2.0 |
+| [russh](https://github.com/Eugeny/russh) | SSH client (tunnel) | Apache-2.0 |
 | [tokio](https://github.com/tokio-rs/tokio), [tokio-util](https://github.com/tokio-rs/tokio) | Async runtime | MIT |
 | [futures-util](https://github.com/rust-lang/futures-rs) | Stream utilities | MIT OR Apache-2.0 |
 | [async-trait](https://github.com/dtolnay/async-trait) | Async trait methods | MIT OR Apache-2.0 |

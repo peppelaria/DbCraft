@@ -24,7 +24,7 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 
 | Area | Cosa offre |
 |---|---|
-| **Connessioni** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Connessioni salvate, prova connessione, SSL/TLS opzionale. Le password stanno nel portachiavi del sistema operativo (Portachiavi di macOS, Gestione credenziali di Windows, Secret Service su Linux), mai in chiaro. |
+| **Connessioni** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Connessioni salvate, prova connessione, SSL/TLS opzionale e **tunnel SSH** con autenticazione tramite password o chiave privata (con o senza passphrase; la chiave dell'host è verificata con `~/.ssh/known_hosts`). Le password stanno nel portachiavi del sistema operativo (Portachiavi di macOS, Gestione credenziali di Windows, Secret Service su Linux), mai in chiaro. |
 | **Albero oggetti** | Connessione → Database → Schema → Tabelle / Viste / Funzioni / Procedure / Trigger, caricati su richiesta, con menu contestuali. |
 | **Vista Oggetti** | Elenco ricercabile degli oggetti del database o schema selezionato, con numero di righe e commenti. |
 | **Visualizzatore / editor tabelle** | Griglia virtualizzata (disegna solo le celle visibili), paginazione lato server (da 100 a 50.000 righe per pagina), filtro `WHERE`, ordinamento lato server, "filtra per questo valore". Modifica nella cella, imposta NULL o stringa vuota, aggiungi ed elimina record. Le modifiche restano in sospeso (evidenziate) finché non le **applichi**: vengono allora salvate in un'unica transazione. In alternativa puoi **annullarle**. |
@@ -67,6 +67,8 @@ cargo run --release -- "postgres://utente:password@localhost:5432/miodb"  # o un
 
 Schemi URL: `postgres://`, `mysql://`, `mariadb://`, `sqlserver://` (o `mssql://`) e
 `sqlite://`. Codifica i caratteri speciali della password (per esempio `@` → `%40`).
+Aggiungi `?ssh=utente:password@host-ssh:porta` per passare da un tunnel SSH, oppure
+`?ssh=utente@host-ssh&ssh_key=~/.ssh/id_ed25519` per l'autenticazione con chiave.
 
 Per creare una connessione, clicca **Connessione** nella barra in alto e scegli il tipo di database.
 
@@ -78,6 +80,7 @@ Per creare una connessione, clicca **Connessione** nella barra in alto e scegli 
 | `--open-table <nome>` | Apre una tabella di quel file appena è caricata |
 | `--query "<sql>"` | Apre un tab query con questo SQL e lo esegue |
 | `--dark` | Avvia con il tema scuro |
+| `--new-connection <tipo> [--ssh-tab]` | Apre il dialogo di nuova connessione (`mysql`, `postgres`, …), eventualmente sulla scheda SSH |
 | `--screenshot <out.png> [--delay <s>]` | Salva un PNG della finestra dopo `s` secondi (predefinito 3), poi esce. Serve per le verifiche automatiche dell'interfaccia. |
 
 Le connessioni salvate stanno nella cartella di configurazione del sistema
@@ -95,14 +98,16 @@ Test di integrazione dei driver su server reali (Docker):
 
 ```sh
 docker compose -f docker-compose.test.yml up -d --wait
-DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers -- --test-threads=1
+mkdir -p target/ssh-test
+DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh -- --test-threads=1
 docker compose -f docker-compose.test.yml down -v
 ```
 
 La suite crea tabelle con indici e chiavi esterne, esegue script con più istruzioni, verifica
 l'introspezione, applica e annulla modifiche in transazione, modifica le tabelle con l'SQL del
 designer e controlla la decodifica dei tipi di ogni motore (timestamp con fuso orario, UUID,
-JSON, array, money, interi senza segno a 64 bit, XML, …). L'immagine di SQL Server è solo amd64 e
+JSON, array, money, interi senza segno a 64 bit, XML, …). I test SSH passano da un container
+OpenSSH con password, chiave RSA e chiave Ed25519 protetta da passphrase. L'immagine di SQL Server è solo amd64 e
 su Apple Silicon gira in emulazione.
 
 ### Pubblicare una release (manutentori)
@@ -146,7 +151,8 @@ crates/
 - [x] Test di integrazione su PostgreSQL, MySQL/MariaDB e SQL Server (Docker)
 - [ ] Autocompletamento SQL (parole chiave, tabelle, colonne)
 - [ ] Interruzione di una query in esecuzione
-- [ ] Tunnel SSH e più opzioni SSL
+- [x] Tunnel SSH (password, chiave privata con passphrase facoltativa)
+- [ ] Più opzioni SSL (certificati CA e client), tunnel HTTP
 - [ ] Set di icone vettoriali proprio
 - [ ] Interfaccia in inglese / localizzazione
 - [ ] Diagramma ER, sincronizzazione di dati e struttura, backup/ripristino
@@ -169,6 +175,7 @@ DbCraft si basa sul lavoro di molti progetti open source. Grazie!
 - **[sqlx](https://github.com/launchbadge/sqlx)**: driver per SQLite, PostgreSQL e MySQL.
 - **[tiberius](https://github.com/prisma/tiberius)**: driver per SQL Server (TDS).
 - **[tokio](https://tokio.rs)**: runtime asincrono.
+- **[russh](https://github.com/Eugeny/russh)**: client SSH per il tunnel.
 - **[SQLite](https://sqlite.org)** (pubblico dominio), incluso tramite `libsqlite3-sys`.
 - **[syntect](https://github.com/trishume/syntect)** (tramite `egui_extras`): evidenziazione SQL.
 - **[rust_xlsxwriter](https://github.com/jmcnamara/rust_xlsxwriter)**,

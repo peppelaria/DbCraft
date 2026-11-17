@@ -1,4 +1,5 @@
-//! Command line: `dbcraft [file.db] [--open-table T] [--query SQL] [--screenshot out.png [--delay S]]`.
+//! Command line: `dbcraft [file.db | url] [--open-table T] [--query SQL] [--new-connection KIND [--ssh-tab]]
+//! [--dark] [--screenshot out.png [--delay S]]`.
 //! The last three exist for scripted checks of the UI (the PNG comes from egui's framebuffer).
 
 use std::path::PathBuf;
@@ -13,6 +14,10 @@ pub struct Cli {
     pub screenshot: Option<PathBuf>,
     pub delay: f64,
     pub dark: bool,
+    /// Opens the new-connection dialog for this engine (`mysql`, `postgres`, …).
+    pub new_connection: Option<String>,
+    /// …on its SSH tab.
+    pub ssh_tab: bool,
     started: Option<Instant>,
     shot_requested: bool,
 }
@@ -28,6 +33,8 @@ impl Cli {
                 "--screenshot" => c.screenshot = args.next().map(PathBuf::from),
                 "--delay" => c.delay = args.next().and_then(|d| d.parse().ok()).unwrap_or(3.0),
                 "--dark" => c.dark = true,
+                "--new-connection" => c.new_connection = args.next(),
+                "--ssh-tab" => c.ssh_tab = true,
                 _ if !a.starts_with('-') && c.db.is_none() => c.db = Some(a),
                 _ => {}
             }

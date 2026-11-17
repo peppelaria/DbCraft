@@ -56,6 +56,42 @@ pub struct ConnectionConfig {
     pub save_password: bool,
     #[serde(skip)]
     pub password: String,
+    /// Optional SSH tunnel to reach the server.
+    #[serde(default)]
+    pub ssh: SshConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SshAuth {
+    #[default]
+    Password,
+    /// Private key file, optionally protected by a passphrase.
+    PublicKey,
+}
+
+/// SSH tunnel settings. The password (or the key passphrase) is not serialised: it lives in the
+/// OS keychain.
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(default)]
+pub struct SshConfig {
+    pub enabled: bool,
+    pub host: String,
+    /// 0 means 22.
+    pub port: u16,
+    pub user: String,
+    pub auth: SshAuth,
+    /// Private key path (public-key authentication).
+    pub key_path: String,
+    pub save_password: bool,
+    /// Password, or the private key's passphrase.
+    #[serde(skip)]
+    pub password: String,
+}
+
+impl SshConfig {
+    pub fn port_or_default(&self) -> u16 {
+        if self.port == 0 { 22 } else { self.port }
+    }
 }
 
 fn percent_decode(s: &str) -> String {
@@ -96,7 +132,8 @@ impl ConnectionConfig {
             cfg.name = std::path::Path::new(&cfg.database).file_name().map_or_else(|| cfg.database.clone(), |n| n.to_string_lossy().into_owned());
             return Ok(cfg);
         }
-        let rest = rest.split(['?', '#']).next().unwrap_or("");
+        let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let rest = rest.split('#').next().unwrap_or("");
         let (auth, hostpart) = match rest.rsplit_once('@') {
             Some((a, h)) => (Some(a), h),
             None => (None, rest),
@@ -120,6 +157,32 @@ impl ConnectionConfig {
             cfg.host = "localhost".into();
         }
         cfg.name = format!("{} {}{}", kind.label(), cfg.host, if cfg.database.is_empty() { String::new() } else { format!("/{}", cfg.database) });
+        // SSH tunnel: `?ssh=user[:password]@host[:port]`, optionally `&ssh_key=path` (the password is
+        // then the key's passphrase).
+        for pair in query.split('#').next().unwrap_or("").split('&').filter(|p| !p.is_empty()) {
+            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+            match k {
+                "ssh" => {
+                    let v = percent_decode(v);
+                    let (auth, hostport) = v.rsplit_once('@').ok_or("ssh: atteso utente@host")?;
+                    let (user, pw) = auth.split_once(':').unwrap_or((auth, ""));
+                    let (host, port) = hostport.rsplit_once(':').map_or((hostport, "22"), |(h, p)| (h, p));
+                    cfg.ssh.enabled = true;
+                    cfg.ssh.user = user.to_string();
+                    cfg.ssh.password = pw.to_string();
+                    cfg.ssh.host = host.to_string();
+                    cfg.ssh.port = port.parse().map_err(|_| format!("ssh: porta non valida: {port}"))?;
+                }
+                "ssh_key" => {
+                    cfg.ssh.auth = SshAuth::PublicKey;
+                    cfg.ssh.key_path = percent_decode(v);
+                }
+                _ => {}
+            }
+        }
+        if cfg.ssh.enabled {
+            cfg.name.push_str(&format!(" (SSH {})", cfg.ssh.host));
+        }
         Ok(cfg)
     }
 }
@@ -140,5 +203,11 @@ mod tests {
         let c = ConnectionConfig::from_url("sqlite:///tmp/a.db").unwrap();
         assert_eq!(c.database, "/tmp/a.db");
         assert!(ConnectionConfig::from_url("oracle://x").is_err());
+        let c = ConnectionConfig::from_url("postgres://u:p@localhost/db?ssh=me:s3cr%40t@bastion.example:2222").unwrap();
+        assert!(c.ssh.enabled);
+        assert_eq!((c.ssh.user.as_str(), c.ssh.password.as_str(), c.ssh.host.as_str(), c.ssh.port, c.ssh.auth), ("me", "s3cr@t", "bastion.example", 2222, SshAuth::Password));
+        assert_eq!((c.host.as_str(), c.database.as_str()), ("localhost", "db"));
+        let c = ConnectionConfig::from_url("mysql://root@db?ssh=me@bastion&ssh_key=~/.ssh/id_ed25519").unwrap();
+        assert_eq!((c.ssh.port, c.ssh.auth, c.ssh.key_path.as_str()), (22, SshAuth::PublicKey, "~/.ssh/id_ed25519"));
     }
 }

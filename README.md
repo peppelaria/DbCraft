@@ -24,7 +24,7 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 
 | Area | What you get |
 |---|---|
-| **Connections** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Saved connections, connection test, optional SSL/TLS. Passwords are kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux), never in plain text. |
+| **Connections** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Saved connections, connection test, optional SSL/TLS, and an **SSH tunnel** with password or private-key authentication (with or without a passphrase; the host key is checked against `~/.ssh/known_hosts`). Passwords are kept in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux), never in plain text. |
 | **Object tree** | Connection → Database → Schema → Tables / Views / Functions / Procedures / Triggers, loaded lazily, with context menus. |
 | **Objects view** | A searchable list of the objects in the selected database or schema, with row counts and comments. |
 | **Table viewer / editor** | Virtualised grid (only visible cells are painted), server-side paging (100 – 50,000 rows per page), `WHERE` filter, server-side sorting, "filter by this value". Edit cells in place, set NULL or an empty string, add and delete records. Changes stay pending (highlighted) until you **Apply**; they are then committed in a single transaction, or **Discard** them. |
@@ -67,6 +67,8 @@ cargo run --release -- "postgres://user:password@localhost:5432/mydb"  # or any 
 
 URL schemes: `postgres://`, `mysql://`, `mariadb://`, `sqlserver://` (or `mssql://`) and
 `sqlite://`. Percent-encode special characters in the password (for example `@` → `%40`).
+Add `?ssh=user:password@ssh-host:port` to go through an SSH tunnel, or
+`?ssh=user@ssh-host&ssh_key=~/.ssh/id_ed25519` for key authentication.
 
 To create a connection, click **Connessione** in the toolbar and pick the database type.
 
@@ -78,6 +80,7 @@ To create a connection, click **Connessione** in the toolbar and pick the databa
 | `--open-table <name>` | Open a table of that file once it is loaded |
 | `--query "<sql>"` | Open a query tab with this SQL and run it |
 | `--dark` | Start with the dark theme |
+| `--new-connection <kind> [--ssh-tab]` | Open the new-connection dialog (`mysql`, `postgres`, …), optionally on its SSH tab |
 | `--screenshot <out.png> [--delay <s>]` | Save a PNG of the window after `s` seconds (default 3), then quit. Used for automated UI checks. |
 
 Saved connections live in the OS config directory (`dbcraft/connections.json`), for example
@@ -95,14 +98,16 @@ Driver integration tests against real servers (Docker):
 
 ```sh
 docker compose -f docker-compose.test.yml up -d --wait
-DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers -- --test-threads=1
+mkdir -p target/ssh-test
+DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh -- --test-threads=1
 docker compose -f docker-compose.test.yml down -v
 ```
 
 The suite creates tables with indexes and foreign keys, runs multi-statement scripts, checks
 introspection, applies and rolls back transactional edits, alters tables through the designer's
 SQL, and decodes each engine's data types (timestamps with time zones, UUID, JSON, arrays,
-money, unsigned 64-bit, XML, …). The SQL Server image is amd64-only and runs under emulation on
+money, unsigned 64-bit, XML, …). The SSH tests go through an OpenSSH server container with
+password, RSA and passphrase-protected Ed25519 keys. The SQL Server image is amd64-only and runs under emulation on
 Apple Silicon.
 
 ### Releasing (maintainers)
@@ -145,7 +150,8 @@ crates/
 - [x] Integration tests against PostgreSQL, MySQL/MariaDB and SQL Server (Docker)
 - [ ] SQL autocompletion (keywords, tables, columns)
 - [ ] Cancel a running query
-- [ ] SSH tunnel and more SSL options
+- [x] SSH tunnel (password, private key with optional passphrase)
+- [ ] More SSL options (CA and client certificates), HTTP tunnel
 - [ ] Custom vector icon set
 - [ ] English UI / localisation
 - [ ] ER diagram, data and structure sync, backup/restore
@@ -167,6 +173,7 @@ DbCraft is built on the work of many open-source projects. Thank you!
 - **[sqlx](https://github.com/launchbadge/sqlx)**: SQLite, PostgreSQL and MySQL drivers.
 - **[tiberius](https://github.com/prisma/tiberius)**: SQL Server (TDS) driver.
 - **[tokio](https://tokio.rs)**: async runtime.
+- **[russh](https://github.com/Eugeny/russh)**: SSH client for the tunnel.
 - **[SQLite](https://sqlite.org)** (public domain), bundled through `libsqlite3-sys`.
 - **[syntect](https://github.com/trishume/syntect)** (via `egui_extras`): SQL syntax highlighting.
 - **[rust_xlsxwriter](https://github.com/jmcnamara/rust_xlsxwriter)**,

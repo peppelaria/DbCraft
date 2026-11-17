@@ -23,8 +23,40 @@ pub fn load() -> Vec<ConnectionConfig> {
         if c.save_password {
             c.password = get_password(&c.id).unwrap_or_default();
         }
+        if c.ssh.save_password {
+            c.ssh.password = get_password(&ssh_entry(&c.id)).unwrap_or_default();
+        }
     }
     v
+}
+
+/// Keychain entry of a connection's SSH password or key passphrase.
+fn ssh_entry(id: &str) -> String {
+    format!("{id}:ssh")
+}
+
+/// Stores or forgets the database and SSH secrets according to the "save" checkboxes.
+pub fn save_secrets(c: &ConnectionConfig) -> Result<(), String> {
+    if c.id.starts_with(TRANSIENT) {
+        return Ok(());
+    }
+    if c.save_password {
+        set_password(&c.id, &c.password)?;
+    } else {
+        delete_password(&c.id);
+    }
+    if c.ssh.enabled && c.ssh.save_password {
+        set_password(&ssh_entry(&c.id), &c.ssh.password)?;
+    } else {
+        delete_password(&ssh_entry(&c.id));
+    }
+    Ok(())
+}
+
+/// Removes every secret of a connection.
+pub fn delete_secrets(id: &str) {
+    delete_password(id);
+    delete_password(&ssh_entry(id));
 }
 
 pub fn save(conns: &[ConnectionConfig]) -> Result<(), String> {

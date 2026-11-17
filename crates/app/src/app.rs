@@ -201,6 +201,20 @@ impl App {
         if let Some(e) = startup_error {
             app.notify(e, true);
         }
+        if let Some(kind) = app.cli.new_connection.take() {
+            let kind = match kind.to_ascii_lowercase().as_str() {
+                "postgres" | "postgresql" => Some(DbKind::Postgres),
+                "mysql" => Some(DbKind::MySql),
+                "mariadb" => Some(DbKind::MariaDb),
+                "sqlserver" | "mssql" => Some(DbKind::SqlServer),
+                "sqlite" => Some(DbKind::Sqlite),
+                _ => None,
+            };
+            if let Some(k) = kind {
+                let d = ConnDialog::new(k);
+                app.conn_dialog = Some(if app.cli.ssh_tab { d.on_ssh_tab() } else { d });
+            }
+        }
         Ok(app)
     }
 
@@ -490,7 +504,7 @@ impl App {
             ConfirmKind::Truncate(obj) => self.run_ddl(obj.clone(), |d| d.truncate_table(obj.schema.as_deref(), &obj.name), "Svuotata"),
             ConfirmKind::DeleteConn(id) => {
                 self.backend.disconnect(&id);
-                store::delete_password(&id);
+                store::delete_secrets(&id);
                 self.configs.retain(|c| c.id != id);
                 self.tree.remove(&id);
                 if self.loc.as_ref().is_some_and(|l| l.conn == id) {
@@ -887,13 +901,9 @@ impl App {
         if let Some(d) = self.conn_dialog.as_mut() {
             match d.show(ctx, &self.backend) {
                 Some(crate::dialogs::ConnOutcome::Save(cfg)) => {
-                    if cfg.save_password
-                        && let Err(e) = store::set_password(&cfg.id, &cfg.password)
-                    {
-                        self.notices.push((format!("Keychain: {e}"), true, Instant::now()));
-                    }
-                    if !cfg.save_password {
-                        store::delete_password(&cfg.id);
+                    let cfg = *cfg;
+                    if let Err(e) = store::save_secrets(&cfg) {
+                        self.notices.push((format!("Portachiavi: {e}"), true, Instant::now()));
                     }
                     let id = cfg.id.clone();
                     match self.configs.iter_mut().find(|c| c.id == id) {

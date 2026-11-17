@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-pub use config::{ConnectionConfig, DbKind};
+pub use config::{ConnectionConfig, DbKind, SshAuth, SshConfig};
 pub use dialect::Dialect;
 pub use schema::{ForeignKeyDef, IndexDef, ColumnDef, ColumnInfo, ForeignKeyInfo, IndexInfo, ObjectKind, SchemaObject, TableDesign, TableInfo};
 pub use value::Value;

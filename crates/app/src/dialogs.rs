@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use db_core::{ConnectionConfig, DbError, DbKind, DbResult, Dialect, ResultSet, RowChange, TableInfo, Value};
+use db_core::{ConnectionConfig, DbError, DbKind, DbResult, Dialect, ResultSet, RowChange, SshAuth, SshConfig, TableInfo, Value};
 use egui::RichText;
 
 use crate::app::{ConfirmKind, ObjRef};
@@ -22,14 +22,22 @@ fn modal<R>(ctx: &egui::Context, id: &str, title: &str, body: impl FnOnce(&mut e
 // ----- connection -----
 
 pub enum ConnOutcome {
-    Save(ConnectionConfig),
+    Save(Box<ConnectionConfig>),
     Cancel,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConnTab {
+    General,
+    Ssh,
 }
 
 pub struct ConnDialog {
     cfg: ConnectionConfig,
     is_new: bool,
     port: String,
+    ssh_port: String,
+    tab: ConnTab,
 }
 
 impl ConnDialog {
@@ -42,13 +50,23 @@ impl ConnDialog {
             port: kind.default_port(),
             user: kind.default_user().into(),
             save_password: true,
+            ssh: SshConfig { port: 22, save_password: true, ..Default::default() },
             ..Default::default()
         };
-        ConnDialog { port: cfg.port.to_string(), cfg, is_new: true }
+        Self::with(cfg, true)
     }
 
     pub fn edit(cfg: ConnectionConfig) -> Self {
-        ConnDialog { port: cfg.port.to_string(), cfg, is_new: false }
+        Self::with(cfg, false)
+    }
+
+    pub fn on_ssh_tab(mut self) -> Self {
+        self.tab = ConnTab::Ssh;
+        self
+    }
+
+    fn with(cfg: ConnectionConfig, is_new: bool) -> Self {
+        ConnDialog { port: cfg.port.to_string(), ssh_port: cfg.ssh.port_or_default().to_string(), cfg, is_new, tab: ConnTab::General }
     }
 
     pub fn show(&mut self, ctx: &egui::Context, backend: &Backend) -> Option<ConnOutcome> {
@@ -56,52 +74,19 @@ impl ConnDialog {
         modal(ctx, "conn-dialog", &title, |ui| {
             let mut out = None;
             let sqlite = self.cfg.kind == DbKind::Sqlite;
-            egui::Grid::new("conn-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                ui.label("Nome connessione:");
-                ui.add(egui::TextEdit::singleline(&mut self.cfg.name).desired_width(280.0));
-                ui.end_row();
-                if sqlite {
-                    ui.label("File database:");
-                    ui.horizontal(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(220.0).hint_text(":memory:"));
-                        if ui.button("…").on_hover_text("Scegli o crea un file").clicked()
-                            && let Some(p) = rfd::FileDialog::new().add_filter("SQLite", &["db", "sqlite", "sqlite3", "db3"]).set_file_name("database.db").save_file()
-                        {
-                            self.cfg.database = p.to_string_lossy().into_owned();
-                        }
-                        if ui.button("Apri…").clicked()
-                            && let Some(p) = rfd::FileDialog::new().pick_file()
-                        {
-                            self.cfg.database = p.to_string_lossy().into_owned();
-                        }
-                    });
-                    ui.end_row();
-                } else {
-                    ui.label("Host:");
-                    ui.add(egui::TextEdit::singleline(&mut self.cfg.host).desired_width(280.0));
-                    ui.end_row();
-                    ui.label("Porta:");
-                    if ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0)).changed() {
-                        self.cfg.port = self.port.trim().parse().unwrap_or(self.cfg.port);
-                    }
-                    ui.end_row();
-                    ui.label("Nome utente:");
-                    ui.add(egui::TextEdit::singleline(&mut self.cfg.user).desired_width(280.0));
-                    ui.end_row();
-                    ui.label("Password:");
-                    ui.add(egui::TextEdit::singleline(&mut self.cfg.password).password(true).desired_width(280.0));
-                    ui.end_row();
-                    ui.label("");
-                    ui.checkbox(&mut self.cfg.save_password, "Salva password (Portachiavi)");
-                    ui.end_row();
-                    ui.label("Database iniziale:");
-                    ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(280.0).hint_text("(facoltativo)"));
-                    ui.end_row();
-                    ui.label("");
-                    ui.checkbox(&mut self.cfg.ssl, "Richiedi SSL/TLS");
-                    ui.end_row();
-                }
-            });
+            if !sqlite {
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.tab, ConnTab::General, "Generale");
+                    let ssh_label = if self.cfg.ssh.enabled { "SSH ●" } else { "SSH" };
+                    ui.selectable_value(&mut self.tab, ConnTab::Ssh, ssh_label);
+                });
+                ui.separator();
+            }
+            ui.set_min_height(300.0);
+            match self.tab {
+                ConnTab::Ssh if !sqlite => self.ssh_ui(ui),
+                _ => self.general_ui(ui),
+            }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 if ui.button("Prova connessione").clicked() {
@@ -111,8 +96,9 @@ impl ConnDialog {
                             Ok(d) => {
                                 let r = d.list_databases().await;
                                 d.close().await;
+                                let via = if cfg.ssh.enabled && cfg.kind != DbKind::Sqlite { " tramite SSH" } else { "" };
                                 match r {
-                                    Ok(v) => Msg::Notice { text: format!("Connessione riuscita ({} database)", v.len()), error: false },
+                                    Ok(v) => Msg::Notice { text: format!("Connessione riuscita{via} ({} database)", v.len()), error: false },
                                     Err(e) => Msg::Notice { text: e.to_string(), error: true },
                                 }
                             }
@@ -122,7 +108,7 @@ impl ConnDialog {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.add_enabled(!self.cfg.name.trim().is_empty(), egui::Button::new(RichText::new("OK").strong())).clicked() {
-                        out = Some(ConnOutcome::Save(self.cfg.clone()));
+                        out = Some(ConnOutcome::Save(Box::new(self.cfg.clone())));
                     }
                     if ui.button("Annulla").clicked() {
                         out = Some(ConnOutcome::Cancel);
@@ -132,6 +118,124 @@ impl ConnDialog {
             out
         })
         .flatten()
+    }
+
+    fn general_ui(&mut self, ui: &mut egui::Ui) {
+        let sqlite = self.cfg.kind == DbKind::Sqlite;
+        egui::Grid::new("conn-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+            ui.label("Nome connessione:");
+            ui.add(egui::TextEdit::singleline(&mut self.cfg.name).desired_width(280.0));
+            ui.end_row();
+            if sqlite {
+                ui.label("File database:");
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(220.0).hint_text(":memory:"));
+                    if ui.button("…").on_hover_text("Scegli o crea un file").clicked()
+                        && let Some(p) = rfd::FileDialog::new().add_filter("SQLite", &["db", "sqlite", "sqlite3", "db3"]).set_file_name("database.db").save_file()
+                    {
+                        self.cfg.database = p.to_string_lossy().into_owned();
+                    }
+                    if ui.button("Apri…").clicked()
+                        && let Some(p) = rfd::FileDialog::new().pick_file()
+                    {
+                        self.cfg.database = p.to_string_lossy().into_owned();
+                    }
+                });
+                ui.end_row();
+                return;
+            }
+            ui.label("Host:");
+            ui.add(egui::TextEdit::singleline(&mut self.cfg.host).desired_width(280.0));
+            ui.end_row();
+            ui.label("Porta:");
+            if ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0)).changed() {
+                self.cfg.port = self.port.trim().parse().unwrap_or(self.cfg.port);
+            }
+            ui.end_row();
+            ui.label("Nome utente:");
+            ui.add(egui::TextEdit::singleline(&mut self.cfg.user).desired_width(280.0));
+            ui.end_row();
+            ui.label("Password:");
+            ui.add(egui::TextEdit::singleline(&mut self.cfg.password).password(true).desired_width(280.0));
+            ui.end_row();
+            ui.label("");
+            ui.checkbox(&mut self.cfg.save_password, "Salva password (Portachiavi)");
+            ui.end_row();
+            ui.label("Database iniziale:");
+            ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(280.0).hint_text("(facoltativo)"));
+            ui.end_row();
+            ui.label("");
+            ui.checkbox(&mut self.cfg.ssl, "Richiedi SSL/TLS");
+            ui.end_row();
+        });
+        if self.cfg.ssh.enabled {
+            ui.add_space(6.0);
+            ui.label(RichText::new("Con il tunnel SSH, host e porta sono quelli del database visti dal server SSH (es. localhost).").small().weak());
+        }
+    }
+
+    fn ssh_ui(&mut self, ui: &mut egui::Ui) {
+        let ssh = &mut self.cfg.ssh;
+        ui.checkbox(&mut ssh.enabled, "Usa tunnel SSH");
+        ui.add_space(4.0);
+        ui.add_enabled_ui(ssh.enabled, |ui| {
+            egui::Grid::new("ssh-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                ui.label("Host:");
+                ui.add(egui::TextEdit::singleline(&mut ssh.host).desired_width(280.0).hint_text("server SSH"));
+                ui.end_row();
+                ui.label("Porta:");
+                if ui.add(egui::TextEdit::singleline(&mut self.ssh_port).desired_width(80.0)).changed() {
+                    ssh.port = self.ssh_port.trim().parse().unwrap_or(ssh.port);
+                }
+                ui.end_row();
+                ui.label("Nome utente:");
+                ui.add(egui::TextEdit::singleline(&mut ssh.user).desired_width(280.0));
+                ui.end_row();
+                ui.label("Metodo di autenticazione:");
+                egui::ComboBox::from_id_salt("ssh-auth")
+                    .selected_text(if ssh.auth == SshAuth::Password { "Password" } else { "Chiave pubblica" })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut ssh.auth, SshAuth::Password, "Password");
+                        ui.selectable_value(&mut ssh.auth, SshAuth::PublicKey, "Chiave pubblica");
+                    });
+                ui.end_row();
+                if ssh.auth == SshAuth::PublicKey {
+                    ui.label("Chiave privata:");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut ssh.key_path).desired_width(230.0).hint_text("~/.ssh/id_ed25519"));
+                        if ui.button("…").on_hover_text("Scegli il file della chiave privata").clicked() {
+                            let mut dialog = rfd::FileDialog::new();
+                            if let Some(home) = std::env::var_os("HOME") {
+                                dialog = dialog.set_directory(std::path::Path::new(&home).join(".ssh"));
+                            }
+                            if let Some(p) = dialog.pick_file() {
+                                ssh.key_path = p.to_string_lossy().into_owned();
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Passphrase:");
+                    ui.add(egui::TextEdit::singleline(&mut ssh.password).password(true).desired_width(280.0).hint_text("(vuota se la chiave non è protetta)"));
+                    ui.end_row();
+                } else {
+                    ui.label("Password:");
+                    ui.add(egui::TextEdit::singleline(&mut ssh.password).password(true).desired_width(280.0));
+                    ui.end_row();
+                }
+                ui.label("");
+                let what = if ssh.auth == SshAuth::Password { "password" } else { "passphrase" };
+                ui.checkbox(&mut ssh.save_password, format!("Salva {what} (Portachiavi)"));
+                ui.end_row();
+            });
+        });
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(
+                "La chiave del server SSH viene confrontata con ~/.ssh/known_hosts: se è cambiata la connessione viene rifiutata.",
+            )
+            .small()
+            .weak(),
+        );
     }
 }
 
