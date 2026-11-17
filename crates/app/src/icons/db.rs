@@ -48,10 +48,14 @@ pub enum Db {
     Sun,
     Moon,
     Objects,
+    Beautify,
+    Snippet,
+    Explain,
+    Keyword,
 }
 
 impl Db {
-    pub const ALL: [Db; 38] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects];
+    pub const ALL: [Db; 42] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword];
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -319,6 +323,34 @@ pub fn paint(p: &Painter, rect: Rect, icon: Db, c: Color32) {
         Db::Moon => {
             g.circle(8.0, 8.0, 5.5, Some(c), None);
             g.circle(10.5, 6.0, 4.8, Some(paper), None);
+        }
+        Db::Beautify => {
+            // A wand with sparkles.
+            g.line(&[(2.5, 13.5), (10.0, 6.0)], c, 2.0);
+            g.line(&[(10.0, 6.0), (11.6, 4.4)], amber, 2.2);
+            for (x, y, r) in [(13.0, 2.5, 1.6), (6.0, 2.5, 1.1), (13.5, 9.0, 1.1)] {
+                g.line(&[(x - r, y), (x + r, y)], amber, 1.1);
+                g.line(&[(x, y - r), (x, y + r)], amber, 1.1);
+            }
+        }
+        Db::Snippet => {
+            // { } around a line of code.
+            g.line(&[(5.0, 2.5), (3.8, 3.2), (3.8, 7.0), (2.2, 8.0), (3.8, 9.0), (3.8, 12.8), (5.0, 13.5)], blue, 1.3);
+            g.line(&[(11.0, 2.5), (12.2, 3.2), (12.2, 7.0), (13.8, 8.0), (12.2, 9.0), (12.2, 12.8), (11.0, 13.5)], blue, 1.3);
+            g.stroke(&[(6.3, 6.5), (9.7, 6.5)], c);
+            g.stroke(&[(6.3, 9.5), (8.7, 9.5)], c);
+        }
+        Db::Explain => {
+            // A plan tree: root with two children.
+            g.rect(5.5, 1.5, 5.0, 3.5, Some(orange), None);
+            g.rect(1.5, 11.0, 5.0, 3.5, Some(blue), None);
+            g.rect(9.5, 11.0, 5.0, 3.5, Some(green), None);
+            g.line(&[(8.0, 5.0), (8.0, 8.0), (4.0, 8.0), (4.0, 11.0)], c, 1.1);
+            g.line(&[(8.0, 8.0), (12.0, 8.0), (12.0, 11.0)], c, 1.1);
+        }
+        Db::Keyword => {
+            g.rect(1.5, 4.0, 13.0, 8.0, Some(purple.gamma_multiply(0.25)), Some(purple));
+            g.p.text(g.pt(8.0, 8.0), egui::Align2::CENTER_CENTER, "K", egui::FontId::proportional(8.5 * g.s), purple);
         }
         Db::Objects => {
             for (y, col) in [(2.0f32, blue), (6.5, teal), (11.0, purple)] {

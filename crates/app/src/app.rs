@@ -424,7 +424,7 @@ impl App {
             }
             other => {
                 let tab = match &other {
-                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } => *tab,
+                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::QueryMeta { tab, .. } | Msg::QueryColumns { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } => *tab,
                     _ => return,
                 };
                 let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut self.actions };
@@ -894,6 +894,11 @@ impl App {
             if let Some(TabEntry { tab: Tab::Query(t), .. }) = self.tabs.get(self.active) {
                 ui.separator();
                 ui.label(RichText::new(t.status_text()).small());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(RichText::new(t.cursor_text()).small());
+                    ui.separator();
+                    ui.label(RichText::new(t.completion_text()).small().weak());
+                });
             }
         });
     }
@@ -946,6 +951,12 @@ impl App {
             let mut tab = QueryTab::new(id, loc.clone());
             let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut self.actions };
             tab.debug_builder(&mut env, &spec);
+            self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
+        }
+        if let Some(spec) = self.cli.editor.take() {
+            let id = self.next_id;
+            let mut tab = QueryTab::new(id, loc.clone());
+            tab.debug_editor(&spec);
             self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
         }
         if let Some(sql) = self.cli.query.take() {

@@ -335,3 +335,41 @@ async fn sqlserver_types() {
     )
     .await;
 }
+
+/// Stop in the query editor: a second connection cancels the running statement on the server,
+/// and EXPLAIN works on every engine (SQL Server through SHOWPLAN).
+#[tokio::test]
+async fn cancel_and_explain() {
+    if !enabled() {
+        return;
+    }
+    for (kind, port, sleep) in [(DbKind::Postgres, 55432, "SELECT pg_sleep(30)"), (DbKind::MySql, 53306, "SELECT SLEEP(30)"), (DbKind::MariaDb, 53307, "SELECT SLEEP(30)")] {
+        let c = cfg(kind, port, "dbcraft");
+        let a = db_drivers::connect(&c, None).await.unwrap();
+        let started = std::time::Instant::now();
+        let job = tokio::spawn(async move { a.execute(sleep).await });
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        let b = db_drivers::connect(&c, None).await.unwrap();
+        let sql = db_core::dialect::cancel_query_sql(kind, sleep).unwrap();
+        let rs = b.execute(&sql).await.unwrap();
+        if kind != DbKind::Postgres {
+            let ids: Vec<i64> = rs[0].rows.iter().filter_map(|r| r[0].as_i64()).collect();
+            assert_eq!(ids.len(), 1, "{kind:?}: {:?}", rs[0].rows);
+            b.execute(&format!("KILL QUERY {}", ids[0])).await.unwrap();
+        } else {
+            assert_eq!(rs[0].rows.len(), 1, "{:?}", rs[0].rows);
+        }
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), job).await.expect("still running");
+        assert!(started.elapsed().as_secs() < 10, "{kind:?} not cancelled");
+        // Explain.
+        let plan = b.explain("SELECT * FROM information_schema.tables WHERE table_name = 'x'").await.unwrap();
+        assert!(plan.iter().any(|r| !r.rows.is_empty()), "{kind:?}");
+    }
+    let ms = db_drivers::connect(&cfg(DbKind::SqlServer, 51433, "master"), None).await.unwrap();
+    let plan = ms.explain("SELECT name FROM sys.objects WHERE object_id = 1").await.unwrap();
+    assert!(plan.iter().any(|r| r.columns.iter().any(|c| c.name == "StmtText") && !r.rows.is_empty()), "{plan:?}");
+    // The connection is usable afterwards (SHOWPLAN switched off again).
+    assert_eq!(ms.execute("SELECT 1 AS one").await.unwrap()[0].columns[0].name, "one");
+    let sl = db_drivers::connect(&ConnectionConfig { kind: DbKind::Sqlite, database: ":memory:".into(), ..Default::default() }, None).await.unwrap();
+    assert!(!sl.explain("SELECT 1").await.unwrap()[0].rows.is_empty());
+}

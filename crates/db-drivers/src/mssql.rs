@@ -191,34 +191,17 @@ impl Driver for MssqlDriver {
     }
 
     async fn execute(&self, sql: &str) -> DbResult<Vec<ResultSet>> {
-        let start = Instant::now();
         let mut client = self.client.lock().await;
-        let mut stream = client.simple_query(sql).await.map_err(qerr)?;
-        let mut out: Vec<ResultSet> = Vec::new();
-        while let Some(item) = stream.try_next().await.map_err(qerr)? {
-            match item {
-                QueryItem::Metadata(meta) => out.push(ResultSet {
-                    columns: meta.columns().iter().map(|c| ColumnMeta { name: c.name().to_string(), type_name: type_name(c.column_type()).to_string() }).collect(),
-                    sql: sql.to_string(),
-                    ..Default::default()
-                }),
-                QueryItem::Row(row) => {
-                    if let Some(rs) = out.last_mut()
-                        && rs.rows.len() < MAX_ROWS
-                    {
-                        rs.rows.push(row.into_iter().map(decode).collect());
-                    }
-                }
-            }
-        }
-        let elapsed = start.elapsed();
-        if out.is_empty() {
-            out.push(ResultSet { affected: None, sql: sql.to_string(), ..Default::default() });
-        }
-        for rs in &mut out {
-            rs.elapsed = elapsed;
-        }
-        Ok(out)
+        run_batch(&mut client, sql).await
+    }
+
+    /// `SET SHOWPLAN_ALL` must be alone in its batch: three batches on the same connection.
+    async fn explain(&self, sql: &str) -> DbResult<Vec<ResultSet>> {
+        let mut client = self.client.lock().await;
+        run_batch(&mut client, "SET SHOWPLAN_ALL ON").await?;
+        let res = run_batch(&mut client, sql.trim().trim_end_matches(';')).await;
+        run_batch(&mut client, "SET SHOWPLAN_ALL OFF").await?;
+        res
     }
 
     async fn apply_changes(&self, schema: Option<&str>, table: &str, changes: &[RowChange]) -> DbResult<u64> {
@@ -272,4 +255,34 @@ fn type_name(t: tiberius::ColumnType) -> &'static str {
         C::Udt => "udt",
         C::SSVariant => "sql_variant",
     }
+}
+
+async fn run_batch(client: &mut Client<Compat<TcpStream>>, sql: &str) -> DbResult<Vec<ResultSet>> {
+    let start = Instant::now();
+    let mut stream = client.simple_query(sql).await.map_err(qerr)?;
+    let mut out: Vec<ResultSet> = Vec::new();
+    while let Some(item) = stream.try_next().await.map_err(qerr)? {
+        match item {
+            QueryItem::Metadata(meta) => out.push(ResultSet {
+                columns: meta.columns().iter().map(|c| ColumnMeta { name: c.name().to_string(), type_name: type_name(c.column_type()).to_string() }).collect(),
+                sql: sql.to_string(),
+                ..Default::default()
+            }),
+            QueryItem::Row(row) => {
+                if let Some(rs) = out.last_mut()
+                    && rs.rows.len() < MAX_ROWS
+                {
+                    rs.rows.push(row.into_iter().map(decode).collect());
+                }
+            }
+        }
+    }
+    let elapsed = start.elapsed();
+    if out.is_empty() {
+        out.push(ResultSet { affected: None, sql: sql.to_string(), ..Default::default() });
+    }
+    for rs in &mut out {
+        rs.elapsed = elapsed;
+    }
+    Ok(out)
 }

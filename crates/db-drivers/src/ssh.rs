@@ -150,6 +150,9 @@ impl Driver for TunneledDriver {
     async fn execute(&self, sql: &str) -> DbResult<Vec<ResultSet>> {
         self.inner.execute(sql).await
     }
+    async fn explain(&self, sql: &str) -> DbResult<Vec<ResultSet>> {
+        self.inner.explain(sql).await
+    }
     async fn fetch_page(&self, req: &PageRequest) -> DbResult<ResultSet> {
         self.inner.fetch_page(req).await
     }

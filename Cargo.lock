@@ -1252,6 +1252,7 @@ dependencies = [
 name = "dbcraft"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "csv",
  "db-core",
  "db-drivers",

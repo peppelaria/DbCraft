@@ -16,7 +16,10 @@ pub enum Msg {
     Objects { conn: String, db: String, schema: Option<String>, res: DbResult<Vec<SchemaObject>> },
     TableData { tab: TabId, info: Option<DbResult<TableInfo>>, page: DbResult<ResultSet>, total: Option<u64> },
     Applied { tab: TabId, res: DbResult<u64> },
-    QueryDone { tab: TabId, res: DbResult<Vec<ResultSet>> },
+    QueryDone { tab: TabId, run: u64, res: DbResult<Vec<ResultSet>> },
+    /// Code completion metadata: databases, schemas and objects of a query tab's location.
+    QueryMeta { tab: TabId, generation: u64, dbs: Option<DbResult<Vec<String>>>, schemas: Option<DbResult<Vec<String>>>, objects: DbResult<Vec<SchemaObject>> },
+    QueryColumns { tab: TabId, generation: u64, table: String, res: DbResult<TableInfo> },
     BuilderTables { tab: TabId, res: DbResult<Vec<SchemaObject>> },
     BuilderTable { tab: TabId, name: String, res: DbResult<TableInfo> },
     DesignLoaded { tab: TabId, res: DbResult<TableInfo> },
@@ -45,8 +48,8 @@ impl Backend {
     }
 
     /// Runs `f` with a driver for (`cfg`, `db`), connecting on first use; `""` is the
-    /// connection's default database.
-    pub fn with_driver<F, Fut>(&self, cfg: &ConnectionConfig, db: &str, f: F)
+    /// connection's default database. The handle aborts the job (see [`Backend::evict`]).
+    pub fn with_driver<F, Fut>(&self, cfg: &ConnectionConfig, db: &str, f: F) -> tokio::task::AbortHandle
     where
         F: FnOnce(DbResult<Arc<dyn Driver>>) -> Fut + Send + 'static,
         Fut: Future<Output = Msg> + Send + 'static,
@@ -56,7 +59,7 @@ impl Backend {
         let drivers = self.drivers.clone();
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
-        self.rt.spawn(async move {
+        let job = self.rt.spawn(async move {
             let drv = {
                 let mut map = drivers.lock().await;
                 match map.get(&key) {
@@ -76,6 +79,20 @@ impl Backend {
             let msg = f(drv).await;
             let _ = tx.send(msg);
             ctx.request_repaint();
+        });
+        job.abort_handle()
+    }
+
+    /// Forgets the cached driver of (`conn`, `db`) and closes it: after aborting a job its
+    /// connection may be mid-statement. The next job connects again.
+    pub fn evict(&self, conn: &str, db: &str) {
+        let drivers = self.drivers.clone();
+        let key = (conn.to_string(), db.to_string());
+        self.rt.spawn(async move {
+            let old = drivers.lock().await.remove(&key);
+            if let Some(d) = old {
+                d.close().await;
+            }
         });
     }
 

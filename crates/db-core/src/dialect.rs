@@ -413,6 +413,24 @@ impl Dialect {
     }
 }
 
+/// SQL that, run on another connection, cancels the statement `sent` (PostgreSQL) or lists the
+/// ids of the MySQL/MariaDB connections running it (to `KILL QUERY`). Matches on the first 200
+/// characters of the text, for the same user.
+pub fn cancel_query_sql(kind: crate::DbKind, sent: &str) -> Option<String> {
+    let head: String = sent.chars().take(200).collect();
+    match kind {
+        crate::DbKind::Postgres => Some(format!(
+            "SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND usename = current_user AND state = 'active' AND left(query, 200) = {}",
+            Dialect::Postgres.string_literal(&head)
+        )),
+        crate::DbKind::MySql | crate::DbKind::MariaDb => Some(format!(
+            "SELECT ID FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND USER = SUBSTRING_INDEX(CURRENT_USER(), '@', 1) AND COMMAND = 'Query' AND LEFT(INFO, 200) = {}",
+            Dialect::MySql.string_literal(&head)
+        )),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

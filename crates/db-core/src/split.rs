@@ -4,14 +4,21 @@
 use crate::dialect::Dialect;
 
 pub fn split_statements(sql: &str, d: Dialect) -> Vec<String> {
+    split_ranges(sql, d).into_iter().map(|r| sql[r].to_string()).collect()
+}
+
+/// Byte ranges of the statements of `sql` (trimmed, without the `;`).
+pub fn split_ranges(sql: &str, d: Dialect) -> Vec<std::ops::Range<usize>> {
     let b = sql.as_bytes();
     let mut out = Vec::new();
     let mut start = 0;
     let mut i = 0;
-    let push = |out: &mut Vec<String>, s: &str| {
+    let push = |out: &mut Vec<std::ops::Range<usize>>, from: usize, to: usize| {
+        let s = &sql[from..to];
         let t = s.trim();
         if !t.is_empty() && !is_only_comments(t) {
-            out.push(t.to_string());
+            let lead = s.len() - s.trim_start().len();
+            out.push(from + lead..from + lead + t.len());
         }
     };
     while i < b.len() {
@@ -77,7 +84,7 @@ pub fn split_statements(sql: &str, d: Dialect) -> Vec<String> {
                 }
             }
             b';' => {
-                push(&mut out, &sql[start..i]);
+                push(&mut out, start, i);
                 i += 1;
                 start = i;
             }
@@ -85,9 +92,20 @@ pub fn split_statements(sql: &str, d: Dialect) -> Vec<String> {
         }
     }
     if start < sql.len() {
-        push(&mut out, &sql[start.min(sql.len())..]);
+        push(&mut out, start, sql.len());
     }
     out
+}
+
+/// The statement the cursor (byte offset) is in or right after, as a byte range.
+pub fn statement_at(sql: &str, d: Dialect, cursor: usize) -> Option<std::ops::Range<usize>> {
+    let ranges = split_ranges(sql, d);
+    // Inside a statement, or up to its `;`.
+    if let Some(r) = ranges.iter().find(|r| r.start <= cursor && cursor <= r.end + 1) {
+        return Some(r.clone());
+    }
+    // Otherwise the last one that ends before the cursor.
+    ranges.iter().rev().find(|r| r.end <= cursor).or_else(|| ranges.first()).cloned()
 }
 
 fn is_only_comments(s: &str) -> bool {
@@ -124,6 +142,19 @@ mod tests {
         assert_eq!(split_statements("SELECT $$a;b$$; SELECT 2", Dialect::Postgres), vec!["SELECT $$a;b$$", "SELECT 2"]);
         // $1 parameters are not quotes.
         assert_eq!(split_statements("SELECT $1; SELECT 2", Dialect::Postgres).len(), 2);
+    }
+
+    #[test]
+    fn ranges_and_statement_at_cursor() {
+        let sql = "SELECT 1;\n\n  SELECT 'x;y' ;\nSELECT 3";
+        let r = split_ranges(sql, Dialect::Sqlite);
+        assert_eq!(r.iter().map(|r| &sql[r.clone()]).collect::<Vec<_>>(), ["SELECT 1", "SELECT 'x;y'", "SELECT 3"]);
+        let at = |c: usize| statement_at(sql, Dialect::Sqlite, c).map(|r| &sql[r]);
+        assert_eq!(at(0), Some("SELECT 1"));
+        assert_eq!(at(9), Some("SELECT 1"));
+        assert_eq!(at(sql.find("'x").unwrap_or(0)), Some("SELECT 'x;y'"));
+        assert_eq!(at(sql.len()), Some("SELECT 3"));
+        assert_eq!(statement_at("", Dialect::Sqlite, 0), None);
     }
 
     #[test]

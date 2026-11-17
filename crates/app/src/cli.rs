@@ -24,6 +24,8 @@ pub struct Cli {
     pub table_ui: Vec<String>,
     /// Opens the query builder: `tables;fields`, e.g. `customers,orders;customers.city,sum:orders.total`.
     pub builder: Option<String>,
+    /// Query editor text, `|` = cursor, trailing `!` = open completion: `"SELECT u.| FROM users u!"`.
+    pub editor: Option<String>,
     pub icon_gallery: bool,
     started: Option<Instant>,
     shot_requested: bool,
@@ -45,6 +47,7 @@ impl Cli {
                 "--ssl-tab" => c.ssl_tab = true,
                 "--http-tab" => c.http_tab = true,
                 "--builder" => c.builder = args.next(),
+                "--editor" => c.editor = args.next(),
                 "--icon-gallery" => c.icon_gallery = true,
                 "--table-ui" => c.table_ui = args.next().map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default(),
                 _ if !a.starts_with('-') && c.db.is_none() => c.db = Some(a),

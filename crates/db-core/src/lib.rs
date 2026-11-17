@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod dialect;
+pub mod format;
 pub mod split;
 pub mod schema;
 pub mod value;
@@ -93,6 +94,11 @@ pub trait Driver: Send + Sync {
         }
         let rs = self.execute(&sql).await?;
         Ok(rs.first().and_then(|r| r.rows.first()).and_then(|r| r.first()).and_then(Value::as_i64).unwrap_or(0).max(0) as u64)
+    }
+    /// The execution plan of one statement (`EXPLAIN`, `EXPLAIN QUERY PLAN` on SQLite).
+    async fn explain(&self, sql: &str) -> DbResult<Vec<ResultSet>> {
+        let prefix = if self.dialect() == Dialect::Sqlite { "EXPLAIN QUERY PLAN" } else { "EXPLAIN" };
+        self.execute(&format!("{prefix} {}", sql.trim().trim_end_matches(';'))).await
     }
     /// Applies changes atomically.
     async fn apply_changes(&self, schema: Option<&str>, table: &str, changes: &[RowChange]) -> DbResult<u64>;
