@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/dbgrid", "crates/db-core", "crates/db-drivers", "crates/app"]
+default-members = ["crates/app"]
+exclude = ["vendor"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rmpaolillo/DbCraft"
+rust-version = "1.95"
+
+[workspace.dependencies]
+egui = "0.37"
+eframe = "0.37"
+egui_extras = { version = "0.37", features = ["syntect"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+dbgrid = { path = "crates/dbgrid" }
+db-core = { path = "crates/db-core" }
+db-drivers = { path = "crates/db-drivers" }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

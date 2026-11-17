@@ -1,0 +1,15 @@
+[package]
+name = "dbgrid"
+description = "Virtualised egui data grid for SQL result sets (derived from GridCraft)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[dependencies]
+egui.workspace = true
+
+[lints]
+workspace = true
