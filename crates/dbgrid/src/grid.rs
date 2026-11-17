@@ -240,6 +240,7 @@ impl DataGrid {
                 Some(w) => w,
                 None => {
                     let mut w = painter.layout_no_wrap(c.name.clone(), font.clone(), Color32::BLACK).size().x + 34.0;
+                    w = w.max(painter.layout_no_wrap(c.type_name.clone(), FontId::proportional(10.5), Color32::BLACK).size().x + 16.0);
                     for r in 0..sample {
                         let t = model.cell(r, i).text;
                         let t: String = t.chars().take(60).collect();

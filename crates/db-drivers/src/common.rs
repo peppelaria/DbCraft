@@ -79,6 +79,7 @@ pub fn change_statements(d: db_core::Dialect, schema: Option<&str>, table: &str,
 pub fn text(rs: &ResultSet, row: usize, col: usize) -> String {
     match rs.rows.get(row).and_then(|r| r.get(col)) {
         Some(Value::Null) | None => String::new(),
+        Some(Value::Bytes(b)) => String::from_utf8_lossy(b).into_owned(),
         Some(v) => v.to_string(),
     }
 }
@@ -86,6 +87,7 @@ pub fn text(rs: &ResultSet, row: usize, col: usize) -> String {
 pub fn opt_text(rs: &ResultSet, row: usize, col: usize) -> Option<String> {
     match rs.rows.get(row).and_then(|r| r.get(col)) {
         Some(Value::Null) | None => None,
+        Some(Value::Bytes(b)) => Some(String::from_utf8_lossy(b).into_owned()),
         Some(v) => Some(v.to_string()),
     }
 }

@@ -181,13 +181,13 @@ impl Dialect {
         s
     }
 
-    fn fk_sql(self, f: &ForeignKeyDef) -> String {
+    fn fk_sql(self, schema: Option<&str>, f: &ForeignKeyDef) -> String {
         let cols = |s: &str| split_list(s).iter().map(|c| self.quote(c)).collect::<Vec<_>>().join(", ");
         let mut s = String::new();
         if !f.name.trim().is_empty() {
             s.push_str(&format!("CONSTRAINT {} ", self.quote(f.name.trim())));
         }
-        s.push_str(&format!("FOREIGN KEY ({}) REFERENCES {} ({})", cols(&f.columns), self.quote(&f.ref_table), cols(&f.ref_columns)));
+        s.push_str(&format!("FOREIGN KEY ({}) REFERENCES {} ({})", cols(&f.columns), self.qualified(schema, &f.ref_table), cols(&f.ref_columns)));
         if !f.on_delete.trim().is_empty() {
             s.push_str(&format!(" ON DELETE {}", f.on_delete.trim()));
         }
@@ -222,7 +222,7 @@ impl Dialect {
             parts.push(format!("PRIMARY KEY ({})", pk.iter().map(|c| self.quote(&c.name)).collect::<Vec<_>>().join(", ")));
         }
         for f in &d.foreign_keys {
-            parts.push(self.fk_sql(f));
+            parts.push(self.fk_sql(d.schema.as_deref(), f));
         }
         let mut out = vec![format!("CREATE TABLE {} (\n  {}\n)", self.qualified(d.schema.as_deref(), &d.name), parts.join(",\n  "))];
         for i in &d.indexes {
@@ -337,7 +337,7 @@ impl Dialect {
         }
         for f in &new.foreign_keys {
             if !old.foreign_keys.contains(f) {
-                out.push(format!("ALTER TABLE {t} ADD {}", self.fk_sql(f)));
+                out.push(format!("ALTER TABLE {t} ADD {}", self.fk_sql(new.schema.as_deref(), f)));
             }
         }
         if old.name != new.name {

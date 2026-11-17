@@ -88,8 +88,8 @@ impl Driver for PgDriver {
         let sql = format!(
             "SELECT c.relname, CASE WHEN c.relkind IN ('v','m') THEN 'V' ELSE 'T' END, c.reltuples::bigint, obj_description(c.oid, 'pg_class') \
              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = {s} AND c.relkind IN ('r','p','v','m','f') \
-             UNION ALL SELECT p.proname, CASE WHEN p.prokind = 'p' THEN 'P' ELSE 'F' END, NULL, NULL FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = {s} \
-             UNION ALL SELECT DISTINCT trigger_name::text, 'R', NULL, NULL FROM information_schema.triggers WHERE trigger_schema = {s} ORDER BY 1"
+             UNION ALL SELECT p.proname, CASE WHEN p.prokind = 'p' THEN 'P' ELSE 'F' END, NULL::bigint, NULL::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = {s} \
+             UNION ALL SELECT DISTINCT trigger_name::text, 'R', NULL::bigint, NULL::text FROM information_schema.triggers WHERE trigger_schema = {s} ORDER BY 1"
         );
         let rs = self.q(&sql).await?;
         Ok((0..rs.rows.len())

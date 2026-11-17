@@ -11,9 +11,9 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 
 ![Table viewer](docs/screenshots/table-viewer.png)
 
-> **Status: early development (v0.1).** SQLite is tested end to end. The PostgreSQL,
-> MySQL/MariaDB and SQL Server drivers are implemented but have not yet been tested against live
-> servers. Back up your data before you edit production databases.
+> **Status: early development (v0.1).** All four engines pass the same end-to-end test suite
+> against real servers: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 and SQLite.
+> Back up your data before you edit production databases.
 
 ---
 
@@ -51,7 +51,11 @@ git clone https://github.com/rmpaolillo/DbCraft.git
 cd DbCraft
 cargo run --release                     # start the app
 cargo run --release -- path/to/file.db  # open a SQLite file directly (temporary connection)
+cargo run --release -- "postgres://user:password@localhost:5432/mydb"  # or any server by URL
 ```
+
+URL schemes: `postgres://`, `mysql://`, `mariadb://`, `sqlserver://` (or `mssql://`) and
+`sqlite://`. Percent-encode special characters in the password (for example `@` → `%40`).
 
 To create a connection, click **Connessione** in the toolbar and pick the database type.
 
@@ -59,7 +63,7 @@ To create a connection, click **Connessione** in the toolbar and pick the databa
 
 | Option | Description |
 |---|---|
-| `<file.db>` | Open a SQLite file as a temporary, unsaved connection |
+| `<file.db>` or `<url>` | Open a SQLite file or a server URL as a temporary, unsaved connection |
 | `--open-table <name>` | Open a table of that file once it is loaded |
 | `--query "<sql>"` | Open a query tab with this SQL and run it |
 | `--dark` | Start with the dark theme |
@@ -75,6 +79,20 @@ folder.
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Driver integration tests against real servers (Docker):
+
+```sh
+docker compose -f docker-compose.test.yml up -d --wait
+DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers -- --test-threads=1
+docker compose -f docker-compose.test.yml down -v
+```
+
+The suite creates tables with indexes and foreign keys, runs multi-statement scripts, checks
+introspection, applies and rolls back transactional edits, alters tables through the designer's
+SQL, and decodes each engine's data types (timestamps with time zones, UUID, JSON, arrays,
+money, unsigned 64-bit, XML, …). The SQL Server image is amd64-only and runs under emulation on
+Apple Silicon.
 
 ## Architecture
 
@@ -98,7 +116,7 @@ crates/
 
 ## Roadmap
 
-- [ ] Integration tests against PostgreSQL, MySQL/MariaDB and SQL Server (Docker)
+- [x] Integration tests against PostgreSQL, MySQL/MariaDB and SQL Server (Docker)
 - [ ] SQL autocompletion (keywords, tables, columns)
 - [ ] Cancel a running query
 - [ ] SSH tunnel and more SSL options

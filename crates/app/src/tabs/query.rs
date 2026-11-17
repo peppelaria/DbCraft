@@ -30,11 +30,22 @@ pub struct QueryTab {
     last: String,
     path: Option<std::path::PathBuf>,
     pending_run: bool,
+    /// The running script changes the schema: refresh the tree when it finishes.
+    ddl: bool,
+    /// The first result belongs to the `SET search_path` prefix.
+    skip_first: bool,
+}
+
+fn changes_schema(sql: &str) -> bool {
+    sql.split(';').any(|s| {
+        let w = s.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+        matches!(w.as_str(), "CREATE" | "DROP" | "ALTER" | "RENAME" | "TRUNCATE" | "COMMENT")
+    })
 }
 
 impl QueryTab {
     pub fn new(id: TabId, loc: Location) -> Self {
-        QueryTab { id, loc, sql: String::new(), results: Vec::new(), active_result: 0, messages: Vec::new(), running: None, last: String::new(), path: None, pending_run: false }
+        QueryTab { id, loc, sql: String::new(), results: Vec::new(), active_result: 0, messages: Vec::new(), running: None, last: String::new(), path: None, pending_run: false, ddl: false, skip_first: false }
     }
 
     pub fn set_sql(&mut self, sql: String, run: bool) {
@@ -49,6 +60,18 @@ impl QueryTab {
         }
         self.running = Some(Instant::now());
         self.messages.push((format!("> {}", sql.trim()), false));
+        self.ddl = changes_schema(&sql);
+        // PostgreSQL: unqualified names resolve in the schema selected in the tree.
+        let sql = match (&self.loc.schema, cfg.kind) {
+            (Some(s), db_core::DbKind::Postgres) if s != "public" => {
+                self.skip_first = true;
+                format!("SET search_path TO {}, public;\n{sql}", db_core::Dialect::Postgres.quote(s))
+            }
+            _ => {
+                self.skip_first = false;
+                sql
+            }
+        };
         let tab = self.id;
         env.backend.with_driver(&cfg, &self.loc.db, move |d| async move {
             let res = match d {
@@ -59,13 +82,17 @@ impl QueryTab {
         });
     }
 
-    pub fn handle(&mut self, msg: Msg) {
+    pub fn handle(&mut self, msg: Msg, env: &mut Env<'_>) {
         let Msg::QueryDone { res, .. } = msg else { return };
+        if std::mem::take(&mut self.ddl) {
+            env.actions.push(Action::Refresh(self.loc.clone()));
+        }
+        let skip = usize::from(std::mem::take(&mut self.skip_first));
         let elapsed = self.running.take().map(|t| t.elapsed()).unwrap_or_default();
         match res {
             Ok(sets) => {
                 let mut views = Vec::new();
-                for rs in sets {
+                for rs in sets.into_iter().skip(skip) {
                     if rs.columns.is_empty() {
                         let n = rs.affected.map(|a| format!("{a} righe interessate")).unwrap_or_else(|| "OK".into());
                         self.messages.push((n.to_string(), false));

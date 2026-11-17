@@ -11,8 +11,8 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 
 ![Visualizzatore tabelle](docs/screenshots/table-viewer.png)
 
-> **Stato: sviluppo iniziale (v0.1).** SQLite è testato dall'inizio alla fine. I driver per
-> PostgreSQL, MySQL/MariaDB e SQL Server sono implementati, ma non ancora provati su server reali.
+> **Stato: sviluppo iniziale (v0.1).** Tutti i motori superano la stessa suite di test
+> end-to-end su server reali: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 e SQLite.
 > Fai un backup prima di modificare database di produzione.
 
 ---
@@ -51,7 +51,11 @@ git clone https://github.com/rmpaolillo/DbCraft.git
 cd DbCraft
 cargo run --release                      # avvia l'app
 cargo run --release -- percorso/file.db  # apre direttamente un file SQLite (connessione temporanea)
+cargo run --release -- "postgres://utente:password@localhost:5432/miodb"  # o un server tramite URL
 ```
+
+Schemi URL: `postgres://`, `mysql://`, `mariadb://`, `sqlserver://` (o `mssql://`) e
+`sqlite://`. Codifica i caratteri speciali della password (per esempio `@` → `%40`).
 
 Per creare una connessione, clicca **Connessione** nella barra in alto e scegli il tipo di database.
 
@@ -59,7 +63,7 @@ Per creare una connessione, clicca **Connessione** nella barra in alto e scegli 
 
 | Opzione | Descrizione |
 |---|---|
-| `<file.db>` | Apre un file SQLite come connessione temporanea, non salvata |
+| `<file.db>` o `<url>` | Apre un file SQLite o un server tramite URL come connessione temporanea, non salvata |
 | `--open-table <nome>` | Apre una tabella di quel file appena è caricata |
 | `--query "<sql>"` | Apre un tab query con questo SQL e lo esegue |
 | `--dark` | Avvia con il tema scuro |
@@ -75,6 +79,20 @@ Imposta `DBCRAFT_CONFIG_DIR` per usare un'altra cartella.
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Test di integrazione dei driver su server reali (Docker):
+
+```sh
+docker compose -f docker-compose.test.yml up -d --wait
+DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers -- --test-threads=1
+docker compose -f docker-compose.test.yml down -v
+```
+
+La suite crea tabelle con indici e chiavi esterne, esegue script con più istruzioni, verifica
+l'introspezione, applica e annulla modifiche in transazione, modifica le tabelle con l'SQL del
+designer e controlla la decodifica dei tipi di ogni motore (timestamp con fuso orario, UUID,
+JSON, array, money, interi senza segno a 64 bit, XML, …). L'immagine di SQL Server è solo amd64 e
+su Apple Silicon gira in emulazione.
 
 ## Architettura
 
@@ -99,7 +117,7 @@ crates/
 
 ## Roadmap
 
-- [ ] Test di integrazione su PostgreSQL, MySQL/MariaDB e SQL Server (Docker)
+- [x] Test di integrazione su PostgreSQL, MySQL/MariaDB e SQL Server (Docker)
 - [ ] Autocompletamento SQL (parole chiave, tabelle, colonne)
 - [ ] Interruzione di una query in esecuzione
 - [ ] Tunnel SSH e più opzioni SSL

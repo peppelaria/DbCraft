@@ -186,7 +186,7 @@ impl Driver for MssqlDriver {
         while let Some(item) = stream.try_next().await.map_err(qerr)? {
             match item {
                 QueryItem::Metadata(meta) => out.push(ResultSet {
-                    columns: meta.columns().iter().map(|c| ColumnMeta { name: c.name().to_string(), type_name: format!("{:?}", c.column_type()) }).collect(),
+                    columns: meta.columns().iter().map(|c| ColumnMeta { name: c.name().to_string(), type_name: type_name(c.column_type()).to_string() }).collect(),
                     sql: sql.to_string(),
                     ..Default::default()
                 }),
@@ -220,5 +220,44 @@ impl Driver for MssqlDriver {
         let mut client = self.client.lock().await;
         let res = client.execute(batch, &[]).await.map_err(qerr)?;
         Ok(res.rows_affected().iter().sum())
+    }
+}
+
+/// SQL Server type name for a TDS column type (the protocol has nullable variants such as
+/// `Intn` that the user never wrote).
+fn type_name(t: tiberius::ColumnType) -> &'static str {
+    use tiberius::ColumnType as C;
+    match t {
+        C::Null => "",
+        C::Bit | C::Bitn => "bit",
+        C::Int1 => "tinyint",
+        C::Int2 => "smallint",
+        C::Int4 | C::Intn => "int",
+        C::Int8 => "bigint",
+        C::Float4 => "real",
+        C::Float8 | C::Floatn => "float",
+        C::Money => "money",
+        C::Money4 => "smallmoney",
+        C::Datetime | C::Datetimen => "datetime",
+        C::Datetime4 => "smalldatetime",
+        C::Datetime2 => "datetime2",
+        C::DatetimeOffsetn => "datetimeoffset",
+        C::Daten => "date",
+        C::Timen => "time",
+        C::Decimaln => "decimal",
+        C::Numericn => "numeric",
+        C::Guid => "uniqueidentifier",
+        C::BigVarBin => "varbinary",
+        C::BigBinary => "binary",
+        C::Image => "image",
+        C::BigVarChar => "varchar",
+        C::BigChar => "char",
+        C::Text => "text",
+        C::NVarchar => "nvarchar",
+        C::NChar => "nchar",
+        C::NText => "ntext",
+        C::Xml => "xml",
+        C::Udt => "udt",
+        C::SSVariant => "sql_variant",
     }
 }

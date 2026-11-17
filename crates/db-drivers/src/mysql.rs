@@ -24,7 +24,14 @@ fn decode(row: &MySqlRow, i: usize) -> Value {
         "TINYINT" | "SMALLINT" | "MEDIUMINT" | "INT" | "INTEGER" | "BIGINT" | "YEAR" => row.try_get_unchecked::<i64, _>(i).ok().map(Value::Int),
         "BOOLEAN" => row.try_get_unchecked::<bool, _>(i).ok().map(Value::Bool),
         "FLOAT" | "DOUBLE" => row.try_get_unchecked::<f64, _>(i).ok().map(Value::Float),
-        "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" | "GEOMETRY" | "BIT" => row.try_get_unchecked::<Vec<u8>, _>(i).ok().map(Value::Bytes),
+        // MySQL 8 reports catalog text (SHOW …, information_schema) as VARBINARY: show it as
+        // text when it is printable UTF-8.
+        "BINARY" | "VARBINARY" => row.try_get_unchecked::<Vec<u8>, _>(i).ok().map(|b| match String::from_utf8(b) {
+            Ok(s) if !s.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) => Value::Text(s),
+            Ok(s) => Value::Bytes(s.into_bytes()),
+            Err(e) => Value::Bytes(e.into_bytes()),
+        }),
+        "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "GEOMETRY" | "BIT" => row.try_get_unchecked::<Vec<u8>, _>(i).ok().map(Value::Bytes),
         _ => None,
     };
     v.or_else(|| row.try_get_unchecked::<String, _>(i).ok().map(Value::Text))
@@ -134,7 +141,7 @@ impl Driver for MySqlDriver {
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = {t} AND INDEX_NAME <> 'PRIMARY' GROUP BY INDEX_NAME ORDER BY 1"
             ))
             .await?;
-        let indexes = (0..idx.rows.len()).map(|r| IndexInfo { name: text(&idx, r, 0), unique: !truthy(&idx, r, 1), columns: split_list(&text(&idx, r, 2)) }).collect();
+        let mut indexes: Vec<IndexInfo> = (0..idx.rows.len()).map(|r| IndexInfo { name: text(&idx, r, 0), unique: !truthy(&idx, r, 1), columns: split_list(&text(&idx, r, 2)) }).collect();
         let fk = self
             .q(&format!(
                 "SELECT k.CONSTRAINT_NAME, GROUP_CONCAT(k.COLUMN_NAME ORDER BY k.ORDINAL_POSITION), k.REFERENCED_TABLE_NAME, \
@@ -154,7 +161,10 @@ impl Driver for MySqlDriver {
                 on_delete: opt_text(&fk, r, 4).filter(|a| a != "NO ACTION" && a != "RESTRICT"),
                 on_update: opt_text(&fk, r, 5).filter(|a| a != "NO ACTION" && a != "RESTRICT"),
             })
-            .collect();
+            .collect::<Vec<ForeignKeyInfo>>();
+        // MySQL creates an index named after a foreign key that has none to use: it belongs to the
+        // key, not to the designer's index list.
+        indexes.retain(|i| !foreign_keys.iter().any(|f| f.name == i.name));
         Ok(TableInfo { schema: None, name: table.to_string(), columns, indexes, foreign_keys })
     }
 

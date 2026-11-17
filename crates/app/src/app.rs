@@ -153,14 +153,27 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Result<Self, String> {
         let backend = Backend::new(cc.egui_ctx.clone()).map_err(|e| e.to_string())?;
         let mut configs = store::load();
-        // `dbcraft file.db` opens a SQLite file as a temporary (unsaved) connection.
+        // `dbcraft file.db` or `dbcraft postgres://user:pw@host/db` opens a temporary (unsaved)
+        // connection.
         let cli_opts = crate::cli::Cli::parse();
         if cli_opts.dark {
             cc.egui_ctx.set_theme(egui::Theme::Dark);
         }
-        let cli = cli_opts.db.clone().map(|path| {
-            let name = std::path::Path::new(&path).file_name().map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
-            ConnectionConfig { id: format!("{}cli", store::TRANSIENT), name, kind: DbKind::Sqlite, database: path, ..Default::default() }
+        let mut startup_error = None;
+        let cli = cli_opts.db.clone().and_then(|arg| {
+            let parsed = if arg.contains("://") {
+                ConnectionConfig::from_url(&arg)
+            } else {
+                let name = std::path::Path::new(&arg).file_name().map_or_else(|| arg.clone(), |n| n.to_string_lossy().into_owned());
+                Ok(ConnectionConfig { name, kind: DbKind::Sqlite, database: arg.clone(), ..Default::default() })
+            };
+            match parsed {
+                Ok(c) => Some(ConnectionConfig { id: format!("{}cli", store::TRANSIENT), ..c }),
+                Err(e) => {
+                    startup_error = Some(e);
+                    None
+                }
+            }
         });
         let cli_id = cli.as_ref().map(|c| c.id.clone());
         configs.extend(cli);
@@ -184,6 +197,9 @@ impl App {
         };
         if let Some(id) = cli_id {
             app.connect(&id);
+        }
+        if let Some(e) = startup_error {
+            app.notify(e, true);
         }
         Ok(app)
     }
@@ -387,7 +403,7 @@ impl App {
                 if let Some(t) = self.tabs.iter_mut().find(|t| t.id == tab) {
                     match &mut t.tab {
                         Tab::Table(t) => t.handle(other, &mut env),
-                        Tab::Query(t) => t.handle(other),
+                        Tab::Query(t) => t.handle(other, &mut env),
                         Tab::Designer(t) => t.handle(other, &mut env),
                         Tab::Objects => {}
                     }
