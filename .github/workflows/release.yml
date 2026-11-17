@@ -1,0 +1,185 @@
+# Release: started by hand from the Actions tab ("Run workflow").
+# Builds DbCraft for macOS (universal .app), Windows (x64) and Linux (x64 and arm64), then
+# creates the GitHub release `v<version>` with the packages and their SHA-256 checksums.
+# The version is the one in Cargo.toml ([workspace.package] version); bump it before releasing.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (must match Cargo.toml, e.g. 0.1.0). Empty = use Cargo.toml"
+        required: false
+        default: ""
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: true
+      draft:
+        description: "Create as draft (publish it by hand afterwards)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  prepare:
+    name: Check version and tests
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cargo_version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml)
+          version="${INPUT_VERSION#v}"
+          version="${version:-$cargo_version}"
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::error::Requested version $version does not match Cargo.toml ($cargo_version). Bump [workspace.package] version first."
+            exit 1
+          fi
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release v$version already exists."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$version from $GITHUB_REF_NAME ($GITHUB_SHA)"
+      - name: Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libdbus-1-dev libxkbcommon-dev libgtk-3-dev
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy && rustup default stable
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-latest
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - name: windows-x64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          # Built on the oldest supported Ubuntu so the binary runs on older glibc versions.
+          - name: linux-x64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            targets: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libdbus-1-dev libxkbcommon-dev libgtk-3-dev
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          for t in ${{ matrix.targets }}; do rustup target add "$t"; done
+      - name: Build
+        shell: bash
+        run: |
+          for t in ${{ matrix.targets }}; do
+            cargo build --release --locked -p dbcraft --target "$t"
+          done
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          scripts/package-macos.sh "$VERSION" dist \
+            target/aarch64-apple-darwin/release/dbcraft \
+            target/x86_64-apple-darwin/release/dbcraft
+          rm -rf dist/DbCraft.app
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          name="DbCraft-${VERSION}-${{ matrix.name }}"
+          mkdir -p "dist/$name"
+          cp target/${{ matrix.targets }}/release/dbcraft "dist/$name/"
+          cp README.md README.it.md CREDITS.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          rm -rf "dist/$name"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = "DbCraft-$env:VERSION-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
+          Copy-Item "target/${{ matrix.targets }}/release/dbcraft.exe" "dist/$name/"
+          Copy-Item README.md, README.it.md, CREDITS.md, LICENSE-MIT, LICENSE-APACHE "dist/$name/"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          Remove-Item -Recurse "dist/$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Release notes
+        run: |
+          cat > notes.md <<'EOF'
+          ## Downloads
+
+          | Platform | File |
+          |---|---|
+          | macOS 11+ (Apple silicon and Intel) | `DbCraft-VERSION-macos-universal.zip` |
+          | Windows 10/11 x64 | `DbCraft-VERSION-windows-x64.zip` |
+          | Linux x64 (glibc 2.35+) | `DbCraft-VERSION-linux-x64.tar.gz` |
+          | Linux arm64 (glibc 2.35+) | `DbCraft-VERSION-linux-arm64.tar.gz` |
+
+          The builds are not notarised or code-signed with a certificate:
+          - **macOS**: unzip and move `DbCraft.app` to Applications. On first launch use right-click → Open, or run `xattr -dr com.apple.quarantine /Applications/DbCraft.app`.
+          - **Windows**: SmartScreen may warn; choose "More info" → "Run anyway".
+          - **Linux**: needs a desktop session (X11 or Wayland) and D-Bus/Secret Service for saved passwords.
+
+          Verify downloads against `SHA256SUMS.txt`.
+          EOF
+          sed -i "s/VERSION/${VERSION}/g" notes.md
+      - name: Create release
+        run: |
+          flags=(--title "DbCraft v${VERSION}" --notes-file notes.md --generate-notes --target "$GITHUB_SHA")
+          if [ "${{ inputs.prerelease }}" = "true" ]; then flags+=(--prerelease); fi
+          if [ "${{ inputs.draft }}" = "true" ]; then flags+=(--draft); fi
+          gh release create "v${VERSION}" dist/* --repo "$GITHUB_REPOSITORY" "${flags[@]}"

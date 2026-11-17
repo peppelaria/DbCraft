@@ -1,5 +1,8 @@
 //! DbCraft: a desktop database client (MySQL/MariaDB, PostgreSQL, SQL Server, SQLite).
 
+// Release builds on Windows are GUI apps: no console window behind them.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod backend;
 mod cli;

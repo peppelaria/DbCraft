@@ -1,5 +1,8 @@
 # DbCraft
 
+[![CI](https://github.com/rmpaolillo/DbCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/rmpaolillo/DbCraft/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/rmpaolillo/DbCraft?include_prereleases)](https://github.com/rmpaolillo/DbCraft/releases)
+
 **A fast, native, open-source desktop database client written in Rust.**
 
 DbCraft brings the familiar "one window for all your databases" workflow of professional
@@ -37,6 +40,14 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 | ![Objects](docs/screenshots/objects.png) | ![Query editor](docs/screenshots/query-editor-dark.png) |
 
 ## Getting started
+
+### Download
+
+Prebuilt packages are on the [Releases](https://github.com/rmpaolillo/DbCraft/releases) page:
+a universal `.app` for macOS 11+, Windows x64, and Linux x64/arm64 (glibc 2.35+). The builds are
+not notarised: on macOS, open the app with right-click → Open the first time (or run
+`xattr -dr com.apple.quarantine /Applications/DbCraft.app`); on Windows, SmartScreen may ask for
+confirmation.
 
 ### Requirements
 
@@ -93,6 +104,21 @@ introspection, applies and rolls back transactional edits, alters tables through
 SQL, and decodes each engine's data types (timestamps with time zones, UUID, JSON, arrays,
 money, unsigned 64-bit, XML, …). The SQL Server image is amd64-only and runs under emulation on
 Apple Silicon.
+
+### Releasing (maintainers)
+
+Releases are built by GitHub Actions and started **by hand**:
+
+1. Bump `version` in `[workspace.package]` in `Cargo.toml`, commit and push.
+2. Open **Actions → Release → Run workflow**. Pick the branch, optionally type the version
+   (it must match `Cargo.toml`) and choose *pre-release* or *draft*.
+3. The workflow runs clippy and the tests, builds macOS (universal), Windows x64, Linux x64 and
+   Linux arm64, then creates the tag `v<version>` and the GitHub release with the packages and
+   `SHA256SUMS.txt`.
+
+Every push and pull request also runs **CI** (`.github/workflows/ci.yml`): clippy, tests on
+Linux, macOS and Windows, and the driver suite against real PostgreSQL, MySQL, MariaDB and SQL
+Server service containers.
 
 ## Architecture
 

@@ -1,5 +1,8 @@
 # DbCraft
 
+[![CI](https://github.com/rmpaolillo/DbCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/rmpaolillo/DbCraft/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/rmpaolillo/DbCraft?include_prereleases)](https://github.com/rmpaolillo/DbCraft/releases)
+
 **Client database desktop nativo, veloce e open source, scritto in Rust.**
 
 DbCraft porta in un'app nativa e leggera il flusso di lavoro dei client database professionali
@@ -37,6 +40,14 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 | ![Oggetti](docs/screenshots/objects.png) | ![Editor SQL](docs/screenshots/query-editor-dark.png) |
 
 ## Per iniziare
+
+### Download
+
+I pacchetti già compilati sono nella pagina [Releases](https://github.com/rmpaolillo/DbCraft/releases):
+`.app` universale per macOS 11+, Windows x64 e Linux x64/arm64 (glibc 2.35+). Le build non sono
+notarizzate: su macOS, la prima volta apri l'app con clic destro → Apri (oppure esegui
+`xattr -dr com.apple.quarantine /Applications/DbCraft.app`); su Windows, SmartScreen potrebbe
+chiedere conferma.
 
 ### Requisiti
 
@@ -93,6 +104,21 @@ l'introspezione, applica e annulla modifiche in transazione, modifica le tabelle
 designer e controlla la decodifica dei tipi di ogni motore (timestamp con fuso orario, UUID,
 JSON, array, money, interi senza segno a 64 bit, XML, …). L'immagine di SQL Server è solo amd64 e
 su Apple Silicon gira in emulazione.
+
+### Pubblicare una release (manutentori)
+
+Le release vengono compilate da GitHub Actions e si avviano **a mano**:
+
+1. Aggiorna `version` in `[workspace.package]` nel `Cargo.toml`, fai commit e push.
+2. Apri **Actions → Release → Run workflow**. Scegli il branch, indica facoltativamente la
+   versione (deve coincidere con `Cargo.toml`) e scegli *pre-release* o *draft*.
+3. Il workflow esegue clippy e i test, compila macOS (universale), Windows x64, Linux x64 e
+   Linux arm64, poi crea il tag `v<versione>` e la release GitHub con i pacchetti e
+   `SHA256SUMS.txt`.
+
+Ogni push e pull request esegue anche la **CI** (`.github/workflows/ci.yml`): clippy, test su
+Linux, macOS e Windows, e la suite dei driver su server reali PostgreSQL, MySQL, MariaDB e SQL
+Server (service container).
 
 ## Architettura
 
