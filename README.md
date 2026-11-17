@@ -114,14 +114,17 @@ Apple Silicon.
 
 ### Releasing (maintainers)
 
-Releases are built by GitHub Actions and started **by hand**:
+Releases are built and published by GitHub Actions **automatically**:
 
-1. Bump `version` in `[workspace.package]` in `Cargo.toml`, commit and push.
-2. Open **Actions → Release → Run workflow**. Pick the branch, optionally type the version
-   (it must match `Cargo.toml`) and choose *pre-release* or *draft*.
-3. The workflow runs clippy and the tests, builds macOS (universal), Windows x64, Linux x64 and
-   Linux arm64, then creates the tag `v<version>` and the GitHub release with the packages and
-   `SHA256SUMS.txt`.
+1. Bump `version` in `[workspace.package]` in `Cargo.toml` (e.g. `0.1.0` → `0.2.0`), commit and
+   push to `main`.
+2. The **Release** workflow notices the new version (if no release `v<version>` exists yet), runs
+   clippy and the tests, builds macOS (universal), Windows x64, Linux x64 and Linux arm64, then
+   creates the tag `v<version>` and the GitHub release with the packages and `SHA256SUMS.txt`.
+   Versions below 1.0 or with a suffix (`1.0.0-beta.1`) are marked as pre-releases.
+
+Pushes that do not change the version do not create releases. The workflow can still be started
+by hand (**Actions → Release → Run workflow**), e.g. to make a draft release.
 
 Every push and pull request also runs **CI** (`.github/workflows/ci.yml`): clippy, tests on
 Linux, macOS and Windows, and the driver suite against real PostgreSQL, MySQL, MariaDB and SQL

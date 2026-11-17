@@ -115,14 +115,17 @@ su Apple Silicon gira in emulazione.
 
 ### Pubblicare una release (manutentori)
 
-Le release vengono compilate da GitHub Actions e si avviano **a mano**:
+Le release vengono compilate e pubblicate da GitHub Actions **in automatico**:
 
-1. Aggiorna `version` in `[workspace.package]` nel `Cargo.toml`, fai commit e push.
-2. Apri **Actions → Release → Run workflow**. Scegli il branch, indica facoltativamente la
-   versione (deve coincidere con `Cargo.toml`) e scegli *pre-release* o *draft*.
-3. Il workflow esegue clippy e i test, compila macOS (universale), Windows x64, Linux x64 e
-   Linux arm64, poi crea il tag `v<versione>` e la release GitHub con i pacchetti e
-   `SHA256SUMS.txt`.
+1. Aggiorna `version` in `[workspace.package]` nel `Cargo.toml` (es. `0.1.0` → `0.2.0`), fai
+   commit e push su `main`.
+2. Il workflow **Release** vede la nuova versione (se la release `v<versione>` non esiste ancora),
+   esegue clippy e i test, compila macOS (universale), Windows x64, Linux x64 e Linux arm64, poi
+   crea il tag `v<versione>` e la release GitHub con i pacchetti e `SHA256SUMS.txt`. Le versioni
+   sotto la 1.0 o con un suffisso (`1.0.0-beta.1`) sono segnate come pre-release.
+
+I push che non cambiano la versione non creano release. Il workflow si può comunque avviare a mano
+(**Actions → Release → Run workflow**), ad esempio per creare una release in bozza.
 
 Ogni push e pull request esegue anche la **CI** (`.github/workflows/ci.yml`): clippy, test su
 Linux, macOS e Windows, e la suite dei driver su server reali PostgreSQL, MySQL, MariaDB e SQL
