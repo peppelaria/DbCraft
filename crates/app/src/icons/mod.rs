@@ -104,6 +104,8 @@ pub fn button(ui: &mut Ui, icon: impl Into<Ico>, label: &str) -> Response {
 /// A toggle (selected) or disabled button with an icon.
 pub fn button_ex(ui: &mut Ui, icon: impl Into<Ico>, label: &str, selected: bool, enabled: bool) -> Response {
     let icon = icon.into();
+    let label = crate::i18n::tr(label);
+    let label = label.as_ref();
     let text = if label.is_empty() { RichText::new("") } else { RichText::new(label) };
     let galley = egui::WidgetText::from(text).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
     let pad = ui.spacing().button_padding;
@@ -137,7 +139,7 @@ pub fn button_ex(ui: &mut Ui, icon: impl Into<Ico>, label: &str, selected: bool,
 /// Small square icon button (no label) with a tooltip.
 pub fn small(ui: &mut Ui, icon: impl Into<Ico>, tip: &str, enabled: bool) -> Response {
     let r = button_ex(ui, icon, "", false, enabled);
-    if tip.is_empty() { r } else { r.on_hover_text(tip) }
+    if tip.is_empty() { r } else { r.on_hover_text(crate::i18n::tr(tip).into_owned()) }
 }
 
 /// A large toolbar tile: 24-pt icon over a caption.
@@ -150,7 +152,7 @@ pub fn tile(ui: &mut Ui, icon: impl Into<Ico>, label: &str) -> Response {
         }
         let color = ui.visuals().text_color();
         paint(ui.painter(), Rect::from_center_size(rect.center_top() + vec2(0.0, 18.0), Vec2::splat(26.0)), icon, color);
-        ui.painter().text(rect.center_bottom() - vec2(0.0, 9.0), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), color);
+        ui.painter().text(rect.center_bottom() - vec2(0.0, 9.0), egui::Align2::CENTER_CENTER, crate::i18n::tr(label), egui::FontId::proportional(11.0), color);
     }
     resp
 }
@@ -158,7 +160,7 @@ pub fn tile(ui: &mut Ui, icon: impl Into<Ico>, label: &str) -> Response {
 /// A menu entry with an icon.
 pub fn menu_item(ui: &mut Ui, icon: impl Into<Ico>, label: &str) -> Response {
     let icon = icon.into();
-    let resp = ui.add(egui::Button::new(RichText::new(format!("      {label}"))).frame(false));
+    let resp = ui.add(egui::Button::new(RichText::new(format!("      {}", crate::i18n::tr(label)))).frame(false));
     let r = Rect::from_center_size(egui::pos2(resp.rect.left() + 12.0, resp.rect.center().y), Vec2::splat(14.0));
     paint(ui.painter(), r, icon, ui.visuals().text_color());
     resp

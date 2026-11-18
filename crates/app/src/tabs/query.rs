@@ -17,6 +17,7 @@ use crate::dialogs::ExportSource;
 use crate::models::{ResultModel, grid_columns};
 use crate::tabs::builder::{BuilderRequest, QueryBuilder};
 use crate::tabs::complete::{self, Catalog, Item, Kind};
+use crate::i18n;
 
 struct ResultView {
     label: String,
@@ -69,7 +70,7 @@ pub struct QueryTab {
     running_sql: String,
     explain: bool,
     last: String,
-    path: Option<std::path::PathBuf>,
+    pub path: Option<std::path::PathBuf>,
     pending_run: bool,
     /// The running script changes the schema: refresh the tree when it finishes.
     ddl: bool,
@@ -406,7 +407,7 @@ impl QueryTab {
                         self.messages.push((format!("{} righe restituite{}", rs.rows.len(), if truncated { " (troncate)" } else { "" }), false));
                         let columns = grid_columns(&rs, None);
                         let i = views.len();
-                        let label = if explain { "Explain".to_string() } else { format!("Risultato {}", i + 1) };
+                        let label = if explain { "Explain".to_string() } else { i18n::tf(format!("Risultato {}", i + 1)) };
                         views.push(ResultView { label, rs, columns, grid: DataGrid::new(("result", self.id, i, self.messages.len())) });
                     }
                 }
@@ -595,7 +596,7 @@ impl QueryTab {
 
         // Row 1: file, builder, beautify, snippets.
         ui.horizontal_wrapped(|ui| {
-            if icons::button(ui, G::Save, "Salva").on_hover_text("⌘S").clicked() || ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
+            if icons::button(ui, G::Save, "Salva").on_hover_text(i18n::t("⌘S")).clicked() || ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
                 self.save(env, false);
             }
             ui.menu_button("▾", |ui| {
@@ -609,13 +610,13 @@ impl QueryTab {
                 }
             });
             ui.separator();
-            if icons::button(ui, Db::QueryBuilder, "Query Builder").on_hover_text("Costruisci la query visualmente").clicked() {
+            if icons::button(ui, Db::QueryBuilder, "Query Builder").on_hover_text(i18n::t("Costruisci la query visualmente")).clicked() {
                 self.open_builder(env);
             }
-            if icons::button(ui, Db::Beautify, "Abbellisci SQL").on_hover_text("Formatta la selezione o tutto lo script (⌘⇧F)").clicked() {
+            if icons::button(ui, Db::Beautify, "Abbellisci SQL").on_hover_text(i18n::t("Formatta la selezione o tutto lo script (⌘⇧F)")).clicked() {
                 beautify = true;
             }
-            let snip = icons::button(ui, Db::Snippet, "Snippet ▾").on_hover_text("Inserisci un'istruzione pronta");
+            let snip = icons::button(ui, Db::Snippet, "Snippet ▾").on_hover_text(i18n::t("Inserisci un'istruzione pronta"));
             egui::Popup::menu(&snip).show(|ui| {
                 for (name, text) in snippets(d) {
                     if ui.button(name).on_hover_text(RichText::new(&text).monospace()).clicked() {
@@ -630,7 +631,7 @@ impl QueryTab {
             self.location_pickers(ui, env);
             ui.separator();
             let idle = self.running.is_none();
-            if icons::button_ex(ui, Db::Run, "Esegui", false, idle).on_hover_text("Esegui tutto (⌘↩)").clicked() {
+            if icons::button_ex(ui, Db::Run, "Esegui", false, idle).on_hover_text(i18n::t("Esegui tutto (⌘↩)")).clicked() {
                 run = Some(Run::All);
             }
             ui.add_enabled_ui(idle, |ui| {
@@ -649,10 +650,10 @@ impl QueryTab {
                     }
                 });
             });
-            if icons::button_ex(ui, G::StopSquare, "Stop", false, !idle).on_hover_text("Interrompi la query in esecuzione").clicked() {
+            if icons::button_ex(ui, G::StopSquare, "Stop", false, !idle).on_hover_text(i18n::t("Interrompi la query in esecuzione")).clicked() {
                 stop = true;
             }
-            if icons::button_ex(ui, Db::Explain, "Explain", false, idle).on_hover_text("Piano di esecuzione della selezione o dell'istruzione al cursore").clicked() {
+            if icons::button_ex(ui, Db::Explain, "Explain", false, idle).on_hover_text(i18n::t("Piano di esecuzione della selezione o dell'istruzione al cursore")).clicked() {
                 run = Some(Run::Explain);
             }
             if !idle {
@@ -758,7 +759,7 @@ impl QueryTab {
                     .code_editor()
                     .desired_width(f32::INFINITY)
                     .desired_rows(12)
-                    .hint_text("Scrivi qui le istruzioni SQL…  (Ctrl+Spazio: completamento)")
+                    .hint_text(i18n::t("Scrivi qui le istruzioni SQL…  (Ctrl+Spazio: completamento)"))
                     .layouter(&mut layouter)
                     .show(ui);
                 editor_out = Some((out.response.changed(), out.cursor_range, out.galley.clone(), out.galley_pos));
@@ -795,7 +796,7 @@ impl QueryTab {
 
         // Result tabs.
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.active_result, 0, "Messaggio");
+            ui.selectable_value(&mut self.active_result, 0, i18n::t("Messaggio"));
             for (i, v) in self.results.iter().enumerate() {
                 ui.selectable_value(&mut self.active_result, i + 1, v.label.as_str());
             }
@@ -804,7 +805,7 @@ impl QueryTab {
                     if icons::button(ui, Db::Export, "Esporta risultato").clicked() {
                         env.actions.push(Action::Export(ExportSource::Rows(Box::new(v.rs.clone()), "risultato".into(), self.loc.conn.clone())));
                     }
-                    ui.label(RichText::new(format!("{} righe", v.rs.rows.len())).small());
+                    ui.label(RichText::new(i18n::tf(format!("{} righe", v.rs.rows.len()))).small());
                 });
             }
         });
@@ -817,7 +818,7 @@ impl QueryTab {
             None => {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
                     for (m, err) in &self.messages {
-                        let t = RichText::new(m).monospace();
+                        let t = RichText::new(i18n::tr(m)).monospace();
                         ui.label(if *err { t.color(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C)) } else { t });
                     }
                 });
@@ -835,7 +836,7 @@ impl QueryTab {
                 let w = 360.0;
                 ui.set_width(w);
                 if p.loading && p.items.is_empty() {
-                    ui.label(RichText::new("Caricamento colonne…").weak());
+                    ui.label(RichText::new(i18n::t("Caricamento colonne…")).weak());
                     return;
                 }
                 let h = (p.items.len() as f32 * 20.0).min(230.0);
@@ -935,7 +936,11 @@ impl QueryTab {
     }
 
     fn save(&mut self, env: &mut Env<'_>, ask: bool) {
-        let path = self.path.clone().filter(|_| !ask).or_else(|| rfd::FileDialog::new().add_filter("SQL", &["sql"]).set_file_name("query.sql").save_file());
+        // as in Navicat, the queries are saved with the connection/database: they show up
+        // under "Query" in the toolbar (another folder can be chosen in the dialog)
+        let dir = crate::store::place_dir("queries", &self.loc.conn, &self.loc.db, self.loc.schema.as_deref());
+        let _ = std::fs::create_dir_all(&dir);
+        let path = self.path.clone().filter(|_| !ask).or_else(|| rfd::FileDialog::new().add_filter("SQL", &["sql"]).set_directory(&dir).set_file_name("query.sql").save_file());
         if let Some(p) = path {
             match std::fs::write(&p, &self.sql) {
                 Ok(()) => {

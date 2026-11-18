@@ -28,6 +28,30 @@ pub enum Msg {
     ImportInfo { res: DbResult<TableInfo> },
     Imported { res: DbResult<u64> },
     Notice { text: String, error: bool },
+    /// A catalog list (users, indexes…): `tag` 0 the list, 1 the detail, 2 a command.
+    Catalog { tab: TabId, tag: u8, res: DbResult<Vec<ResultSet>> },
+    /// The tables of a database for the model (ER diagram).
+    Model { tab: TabId, res: DbResult<Vec<TableInfo>> },
+    /// Backup / restore progress.
+    DumpProgress { tab: Option<TabId>, text: String },
+    /// Backup / restore finished, for a tab or a scheduled job.
+    Dumped { tab: Option<TabId>, job: Option<u64>, res: Result<String, String> },
+    /// A scheduled query job finished.
+    JobDone { job: u64, res: Result<String, String> },
+}
+
+/// Sends messages to the UI from a running job (progress).
+#[derive(Clone)]
+pub struct Notifier {
+    tx: Sender<Msg>,
+    ctx: egui::Context,
+}
+
+impl Notifier {
+    pub fn send(&self, msg: Msg) {
+        let _ = self.tx.send(msg);
+        self.ctx.request_repaint();
+    }
 }
 
 type Key = (String, String);
@@ -45,6 +69,10 @@ impl Backend {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().thread_name("dbcraft-io").build()?;
         let (tx, rx) = channel();
         Ok(Backend { rt, drivers: Default::default(), tx, rx, ctx })
+    }
+
+    pub fn notifier(&self) -> Notifier {
+        Notifier { tx: self.tx.clone(), ctx: self.ctx.clone() }
     }
 
     /// Runs `f` with a driver for (`cfg`, `db`), connecting on first use; `""` is the

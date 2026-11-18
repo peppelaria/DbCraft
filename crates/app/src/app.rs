@@ -1,6 +1,6 @@
 //! The main window: toolbar, connection tree, tab strip, status bar and dialogs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use db_core::{ConnectionConfig, DbKind, Dialect, ObjectKind, SchemaObject};
@@ -10,7 +10,12 @@ use crate::backend::{Backend, Msg, TabId};
 use crate::dialogs::{ConfirmDialog, ConnDialog, ExportDialog, ExportSource, ImportDialog};
 use crate::icons::{self, Db, G, Ico};
 use crate::store;
+use crate::tabs::automation::AutomationTab;
+use crate::tabs::backup::BackupTab;
+use crate::tabs::catalog::{CatalogKind, CatalogTab};
+use crate::tabs::model::ModelTab;
 use crate::tabs::{designer::DesignerTab, objects, query::QueryTab, table::TableTab};
+use crate::i18n;
 
 /// A database object address.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -81,6 +86,19 @@ pub enum Action {
     Truncate(ObjRef),
     Notice(String, bool),
     SetTitle(TabId, String),
+    /// Adds the object to the favorites or removes it.
+    ToggleFavorite(ObjRef),
+    /// Opens a saved query in a query tab.
+    OpenQueryFile(Location, std::path::PathBuf),
+    /// Deletes a saved query (after asking).
+    DeleteQueryFile(std::path::PathBuf),
+    /// Runs a scheduled job now.
+    RunJob(u64),
+}
+
+/// Is `obj` among the favorites?
+pub fn is_favorite(favs: &[store::Favorite], obj: &ObjRef) -> bool {
+    favs.iter().any(|f| f.conn == obj.conn && f.db == obj.db && f.schema == obj.schema && f.name == obj.name && f.kind == obj.kind)
 }
 
 /// What tabs may touch while drawing.
@@ -104,6 +122,10 @@ pub enum Tab {
     Table(Box<TableTab>),
     Query(Box<QueryTab>),
     Designer(Box<DesignerTab>),
+    Catalog(Box<CatalogTab>),
+    Backup(Box<BackupTab>),
+    Automation(Box<AutomationTab>),
+    Model(Box<ModelTab>),
 }
 
 pub struct TabEntry {
@@ -133,6 +155,18 @@ pub struct App {
     actions: Vec<Action>,
     cli: crate::cli::Cli,
     updater: crate::update_ui::Updater,
+    /// The Objects tab shows the saved queries instead of the objects (toolbar "Query").
+    objects_queries: bool,
+    query_sel: Option<std::path::PathBuf>,
+    favorites: Vec<store::Favorite>,
+    /// Tree: search text and "only favorites".
+    tree_filter: String,
+    fav_only: bool,
+    /// Scheduled jobs (Automazione) and the ones running.
+    jobs: Vec<store::Job>,
+    running_jobs: HashSet<u64>,
+    show_about: bool,
+    tree_gen: u64,
 }
 
 pub fn icon(kind: ObjectKind) -> Db {
@@ -202,6 +236,15 @@ impl App {
             actions: Vec::new(),
             cli: cli_opts,
             updater: crate::update_ui::Updater::new(),
+            objects_queries: false,
+            query_sel: None,
+            favorites: store::load_favorites(),
+            tree_filter: String::new(),
+            fav_only: false,
+            jobs: store::load_jobs(),
+            running_jobs: HashSet::new(),
+            show_about: false,
+            tree_gen: 0,
         };
         if let Some(id) = cli_id {
             app.connect(&id);
@@ -239,7 +282,7 @@ impl App {
     }
 
     fn notify(&mut self, text: impl Into<String>, error: bool) {
-        self.notices.push((text.into(), error, Instant::now()));
+        self.notices.push((i18n::tf(text.into()), error, Instant::now()));
     }
 
     fn add_tab(&mut self, title: String, tab: Tab) -> TabId {
@@ -424,9 +467,13 @@ impl App {
                     Err(e) => self.notify(format!("Importazione fallita: {e}"), true),
                 }
             }
+            Msg::Dumped { job: Some(job), res, .. } => self.job_finished(job, res),
+            Msg::JobDone { job, res } => self.job_finished(job, res),
+            Msg::DumpProgress { tab: None, .. } => {}
             other => {
                 let tab = match &other {
-                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::QueryMeta { tab, .. } | Msg::QueryColumns { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } => *tab,
+                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::QueryMeta { tab, .. } | Msg::QueryColumns { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } | Msg::Catalog { tab, .. } | Msg::Model { tab, .. } => *tab,
+                    Msg::DumpProgress { tab: Some(tab), .. } | Msg::Dumped { tab: Some(tab), .. } => *tab,
                     _ => return,
                 };
                 let mut env = Env { backend: &self.backend, configs: &self.configs, actions: &mut self.actions };
@@ -435,7 +482,10 @@ impl App {
                         Tab::Table(t) => t.handle(other, &mut env),
                         Tab::Query(t) => t.handle(other, &mut env),
                         Tab::Designer(t) => t.handle(other, &mut env),
-                        Tab::Objects => {}
+                        Tab::Catalog(t) => t.handle(other, &mut env),
+                        Tab::Backup(t) => t.handle(other, &mut env),
+                        Tab::Model(t) => t.handle(other),
+                        Tab::Objects | Tab::Automation(_) => {}
                     }
                 }
             }
@@ -515,6 +565,29 @@ impl App {
                     self.confirm = Some(ConfirmDialog::new(format!("Svuotare la tabella \"{}\"? Tutti i record verranno eliminati.", obj.name), ConfirmKind::Truncate(obj)));
                 }
                 Action::Notice(t, e) => self.notify(t, e),
+                Action::ToggleFavorite(obj) => self.toggle_favorite(&obj),
+                Action::OpenQueryFile(loc, path) => {
+                    if let Some(i) = self.tabs.iter().position(|t| matches!(&t.tab, Tab::Query(q) if q.path.as_ref() == Some(&path))) {
+                        self.active = i;
+                        continue;
+                    }
+                    match std::fs::read_to_string(&path) {
+                        Ok(sql) => {
+                            let id = self.next_id;
+                            let mut tab = QueryTab::new(id, loc);
+                            tab.set_sql(sql, false);
+                            tab.path = Some(path.clone());
+                            let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Query".into());
+                            self.add_tab(title, Tab::Query(Box::new(tab)));
+                        }
+                        Err(e) => self.notify(e.to_string(), true),
+                    }
+                }
+                Action::DeleteQueryFile(path) => {
+                    let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                    self.confirm = Some(ConfirmDialog::new(format!("Eliminare la query \"{name}\"?"), ConfirmKind::DeleteFile(path)));
+                }
+                Action::RunJob(id) => self.run_job(id),
                 Action::SetTitle(id, title) => {
                     if let Some(t) = self.tabs.iter_mut().find(|t| t.id == id) {
                         t.title = title;
@@ -529,6 +602,11 @@ impl App {
             ConfirmKind::Drop(obj) | ConfirmKind::Truncate(obj) if self.cfg(&obj.conn).is_none() => {}
             ConfirmKind::Drop(obj) => self.run_ddl(obj.clone(), |d| d.drop_table(obj.schema.as_deref(), &obj.name, obj.kind == ObjectKind::View), "Eliminato"),
             ConfirmKind::Truncate(obj) => self.run_ddl(obj.clone(), |d| d.truncate_table(obj.schema.as_deref(), &obj.name), "Svuotata"),
+            ConfirmKind::DeleteFile(path) => {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    self.notify(e.to_string(), true);
+                }
+            }
             ConfirmKind::DeleteConn(id) => {
                 self.backend.disconnect(&id);
                 store::delete_secrets(&id);
@@ -565,15 +643,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let conn_btn = icons::tile(ui, Db::Connection, "Connessione");
-            egui::Popup::menu(&conn_btn).show(|ui| {
-                for k in DbKind::ALL {
-                    let r = icons::menu_item(ui, Db::Database, &format!("{}…", k.label()));
-                    ui.painter().circle_filled(r.rect.left_center() + egui::vec2(18.0, 4.0), 3.0, kind_color(k));
-                    if r.clicked() {
-                        self.conn_dialog = Some(ConnDialog::new(k));
-                    }
-                }
-            });
+            egui::Popup::menu(&conn_btn).show(|ui| self.new_connection_menu(ui));
             let loc = self.loc.clone();
             if icons::tile(ui, Db::Query, "Nuova query").clicked() {
                 match loc.clone() {
@@ -582,22 +652,46 @@ impl App {
                 }
             }
             ui.separator();
-            // As in database GUIs: these show that kind of object in the Objects tab.
+            // As in Navicat: these show that kind of object in the Objects tab.
             for (ic, label, kinds) in [
                 (Db::Table, "Tabella", vec![ObjectKind::Table]),
                 (Db::View, "Vista", vec![ObjectKind::View]),
                 (Db::Function, "Funzione", vec![ObjectKind::Function, ObjectKind::Procedure]),
-                (Db::Trigger, "Trigger", vec![ObjectKind::Trigger]),
             ] {
-                let selected = self.active == 0 && self.objects_kinds == kinds;
+                let selected = self.active == 0 && !self.objects_queries && self.objects_kinds == kinds;
                 let r = icons::tile(ui, ic, label);
                 if selected {
-                    ui.painter().rect_stroke(r.rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
+                    selected_frame(ui, &r);
                 }
                 if r.clicked() {
-                    self.objects_kinds = kinds;
-                    self.active = 0;
+                    self.show_kinds(kinds);
                 }
+            }
+            let r = icons::tile(ui, Db::User, "Utente");
+            if r.clicked() {
+                self.open_catalog(CatalogKind::Users);
+            }
+            let r = icons::tile(ui, Db::Others, "Altri ▾");
+            if self.active == 0 && !self.objects_queries && self.objects_kinds == [ObjectKind::Trigger] {
+                selected_frame(ui, &r);
+            }
+            egui::Popup::menu(&r).show(|ui| self.others_menu(ui));
+            let r = icons::tile(ui, Db::Query, "Query");
+            if self.active == 0 && self.objects_queries {
+                selected_frame(ui, &r);
+            }
+            if r.clicked() {
+                self.objects_queries = true;
+                self.active = 0;
+            }
+            if icons::tile(ui, Db::Backup, "Backup").clicked() {
+                self.open_backup();
+            }
+            if icons::tile(ui, Db::Automation, "Automazione").clicked() {
+                self.open_automation();
+            }
+            if icons::tile(ui, Db::Model, "Modello").clicked() {
+                self.open_model();
             }
             ui.separator();
             if icons::tile(ui, Db::NewTable, "Nuova tabella").clicked() {
@@ -641,6 +735,405 @@ impl App {
         });
     }
 
+    fn new_connection_menu(&mut self, ui: &mut egui::Ui) {
+        for k in DbKind::ALL {
+            let r = icons::menu_item(ui, Db::Database, &format!("{}…", k.label()));
+            ui.painter().circle_filled(r.rect.left_center() + egui::vec2(18.0, 4.0), 3.0, kind_color(k));
+            if r.clicked() {
+                self.conn_dialog = Some(ConnDialog::new(k));
+            }
+        }
+    }
+
+    /// "Altri ▾": trigger and the other objects this server has.
+    fn others_menu(&mut self, ui: &mut egui::Ui) {
+        if icons::menu_item(ui, Db::Trigger, "Trigger").clicked() {
+            self.show_kinds(vec![ObjectKind::Trigger]);
+        }
+        let kind = self.loc.as_ref().and_then(|l| self.cfg(&l.conn)).map(|c| c.kind);
+        match kind {
+            Some(k) => {
+                for c in CatalogKind::others(k) {
+                    if icons::menu_item(ui, c.icon(), c.label()).clicked() {
+                        self.open_catalog(c);
+                    }
+                }
+            }
+            None => {
+                ui.label(RichText::new(i18n::t("Apri un database per gli altri oggetti")).weak());
+            }
+        }
+    }
+
+    fn show_kinds(&mut self, kinds: Vec<ObjectKind>) {
+        self.objects_kinds = kinds;
+        self.objects_queries = false;
+        self.active = 0;
+    }
+
+    /// Activates the tab `pred` finds, or adds the one `make` builds.
+    fn open_unique(&mut self, pred: impl Fn(&Tab) -> bool, title: String, make: impl FnOnce(TabId) -> Tab) {
+        if let Some(i) = self.tabs.iter().position(|t| pred(&t.tab)) {
+            self.active = i;
+            return;
+        }
+        let id = self.next_id;
+        let tab = make(id);
+        self.add_tab(title, tab);
+    }
+
+    fn open_catalog(&mut self, kind: CatalogKind) {
+        let Some(loc) = self.loc.clone() else {
+            self.notify("Apri prima una connessione/database", true);
+            return;
+        };
+        // users belong to the server: one tab per connection
+        let loc = if kind == CatalogKind::Users { Location { conn: loc.conn, db: loc.db, schema: None } } else { loc };
+        let conn_name = self.cfg(&loc.conn).map(|c| c.name.clone()).unwrap_or_default();
+        let probe = CatalogTab::new(0, loc.clone(), kind);
+        let title = probe.title(&conn_name);
+        self.open_unique(
+            |t| matches!(t, Tab::Catalog(c) if c.kind == kind && c.loc.conn == loc.conn && (kind == CatalogKind::Users || c.loc == loc)),
+            title,
+            |id| Tab::Catalog(Box::new(CatalogTab::new(id, loc.clone(), kind))),
+        );
+    }
+
+    fn open_backup(&mut self) {
+        let Some(loc) = self.loc.clone() else {
+            self.notify("Apri prima una connessione/database", true);
+            return;
+        };
+        let name = if loc.db.is_empty() { self.cfg(&loc.conn).map(|c| c.name.clone()).unwrap_or_default() } else { loc.db.clone() };
+        let title = match &loc.schema {
+            Some(s) => format!("Backup @{name}.{s}"),
+            None => format!("Backup @{name}"),
+        };
+        self.open_unique(|t| matches!(t, Tab::Backup(b) if b.loc == loc), title, |id| Tab::Backup(Box::new(BackupTab::new(id, loc.clone()))));
+    }
+
+    fn open_automation(&mut self) {
+        self.open_unique(|t| matches!(t, Tab::Automation(_)), "Automazione".into(), |id| Tab::Automation(Box::new(AutomationTab::new(id))));
+    }
+
+    fn open_model(&mut self) {
+        let Some(loc) = self.loc.clone() else {
+            self.notify("Apri prima una connessione/database", true);
+            return;
+        };
+        let name = if loc.db.is_empty() { self.cfg(&loc.conn).map(|c| c.name.clone()).unwrap_or_default() } else { loc.db.clone() };
+        self.open_unique(|t| matches!(t, Tab::Model(m) if m.loc == loc), format!("Modello @{name}"), |id| Tab::Model(Box::new(ModelTab::new(id, loc.clone()))));
+    }
+
+    fn toggle_favorite(&mut self, obj: &ObjRef) {
+        if is_favorite(&self.favorites, obj) {
+            self.favorites.retain(|f| !(f.conn == obj.conn && f.db == obj.db && f.schema == obj.schema && f.name == obj.name && f.kind == obj.kind));
+        } else {
+            self.favorites.push(store::Favorite { conn: obj.conn.clone(), db: obj.db.clone(), schema: obj.schema.clone(), name: obj.name.clone(), kind: obj.kind });
+        }
+        if let Err(e) = store::save_favorites(&self.favorites) {
+            self.notify(e, true);
+        }
+    }
+
+    /// Opens a favorite: connects if needed, selects it and opens tables and views.
+    fn open_favorite(&mut self, f: &store::Favorite) {
+        let obj = ObjRef { conn: f.conn.clone(), db: f.db.clone(), schema: f.schema.clone(), name: f.name.clone(), kind: f.kind };
+        if self.cfg(&f.conn).is_none() {
+            self.notify("La connessione di questo preferito non esiste più", true);
+            return;
+        }
+        if self.tree.get(&f.conn).is_none_or(|n| n.dbs.is_none()) {
+            self.connect(&f.conn);
+        }
+        self.loc = Some(Location { conn: obj.conn.clone(), db: obj.db.clone(), schema: obj.schema.clone() });
+        self.selected = Some(obj.clone());
+        if matches!(obj.kind, ObjectKind::Table | ObjectKind::View) {
+            self.actions.push(Action::OpenTable(obj));
+        } else {
+            self.show_kinds(vec![f.kind]);
+        }
+    }
+
+    // ----- scheduled jobs (Automazione) -----
+
+    fn run_job(&mut self, id: u64) {
+        let Some(job) = self.jobs.iter().find(|j| j.id == id).cloned() else { return };
+        if self.running_jobs.contains(&id) {
+            return;
+        }
+        let Some(cfg) = self.cfg(&job.conn).cloned() else {
+            self.job_finished(id, Err("la connessione non esiste più".into()));
+            return;
+        };
+        self.running_jobs.insert(id);
+        let loc = Location { conn: job.conn.clone(), db: job.db.clone(), schema: job.schema.clone() };
+        match &job.action {
+            store::JobAction::Backup => {
+                crate::dump::start_backup(&self.backend, &cfg, &loc, None, Some(id));
+            }
+            store::JobAction::Query { sql } => {
+                let sql = sql.clone();
+                self.backend.with_driver(&cfg, &loc.db, move |d| async move {
+                    let res = match d {
+                        Ok(d) => d.execute(&sql).await.map(|r| {
+                            let affected: u64 = r.iter().filter_map(|x| x.affected).sum();
+                            let rows: usize = r.iter().map(|x| x.rows.len()).sum();
+                            format!("{} istruzioni, {affected} righe modificate, {rows} righe lette", r.len())
+                        }),
+                        Err(e) => Err(e),
+                    };
+                    Msg::JobDone { job: id, res: res.map_err(|e| e.to_string()) }
+                });
+            }
+        }
+    }
+
+    fn job_finished(&mut self, id: u64, res: Result<String, String>) {
+        self.running_jobs.remove(&id);
+        let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) else { return };
+        job.last_run = Some(store::now());
+        let (text, error) = match res {
+            Ok(t) => (t, false),
+            Err(e) => (format!("Errore: {e}"), true),
+        };
+        job.last_result = Some(text.clone());
+        let name = job.name.clone();
+        if let Err(e) = store::save_jobs(&self.jobs) {
+            self.notify(e, true);
+        }
+        self.notify(format!("Attività «{name}»: {text}"), error);
+    }
+
+    /// Starts the enabled jobs whose time has come.
+    fn run_due_jobs(&mut self, ctx: &egui::Context) {
+        if !self.jobs.iter().any(|j| j.enabled) {
+            return;
+        }
+        let now = store::now();
+        let due: Vec<u64> = self.jobs.iter().filter(|j| j.enabled && j.next_run <= now && !self.running_jobs.contains(&j.id)).map(|j| j.id).collect();
+        if !due.is_empty() {
+            for j in self.jobs.iter_mut().filter(|j| due.contains(&j.id)) {
+                j.next_run = j.schedule.next_after(now);
+            }
+            if let Err(e) = store::save_jobs(&self.jobs) {
+                self.notify(e, true);
+            }
+            for id in due {
+                self.run_job(id);
+            }
+        }
+        // wake up for the next one even when nothing moves
+        let next = self.jobs.iter().filter(|j| j.enabled).map(|j| j.next_run).min().unwrap_or(now + 60);
+        ctx.request_repaint_after(Duration::from_secs((next - now).clamp(1, 60) as u64));
+    }
+
+    // ----- menu bar -----
+
+    fn menu_bar(&mut self, ui: &mut egui::Ui) {
+        egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button(i18n::t("File"), |ui| {
+                ui.menu_button(i18n::t("Nuova connessione"), |ui| self.new_connection_menu(ui));
+                if icons::menu_item(ui, Db::Query, "Nuova query").clicked() {
+                    match self.loc.clone() {
+                        Some(l) => self.actions.push(Action::NewQuery(l)),
+                        None => self.notify("Apri prima una connessione/database", true),
+                    }
+                }
+                if icons::menu_item(ui, G::OpenFolder, "Apri file SQL…").clicked()
+                    && let Some(l) = self.loc.clone()
+                    && let Some(p) = rfd::FileDialog::new().add_filter("SQL", &["sql"]).pick_file()
+                {
+                    self.actions.push(Action::OpenQueryFile(l, p));
+                }
+                ui.separator();
+                let can_close = self.active > 0;
+                if ui.add_enabled(can_close, egui::Button::new(i18n::t("Chiudi scheda"))).clicked() {
+                    self.close_tab(self.active);
+                }
+                ui.separator();
+                if ui.button(i18n::t("Esci")).clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
+            ui.menu_button(i18n::t("Modifica"), |ui| {
+                let sel = self.selected.clone();
+                if ui.add_enabled(sel.is_some(), egui::Button::new(i18n::t("Copia nome oggetto"))).clicked()
+                    && let Some(o) = sel
+                {
+                    ui.ctx().copy_text(o.name);
+                }
+                if ui.button(i18n::t("Cerca nell'albero")).clicked() {
+                    ui.ctx().memory_mut(|m| m.request_focus(egui::Id::unique("tree_search")));
+                }
+            });
+            ui.menu_button(i18n::t("Visualizza"), |ui| {
+                if icons::menu_item(ui, Db::Objects, "Oggetti").clicked() {
+                    self.active = 0;
+                }
+                ui.separator();
+                for (ic, label, kinds) in [
+                    (Db::Table, "Tabelle", vec![ObjectKind::Table]),
+                    (Db::View, "Viste", vec![ObjectKind::View]),
+                    (Db::Function, "Funzioni", vec![ObjectKind::Function, ObjectKind::Procedure]),
+                    (Db::Trigger, "Trigger", vec![ObjectKind::Trigger]),
+                    (Db::Objects, "Tabelle e viste", vec![ObjectKind::Table, ObjectKind::View]),
+                ] {
+                    if icons::menu_item(ui, ic, label).clicked() {
+                        self.show_kinds(kinds);
+                    }
+                }
+                if icons::menu_item(ui, Db::Query, "Query salvate").clicked() {
+                    self.objects_queries = true;
+                    self.active = 0;
+                }
+                ui.separator();
+                ui.menu_button(i18n::t("Lingua"), |ui| self.language_menu(ui));
+                ui.checkbox(&mut self.fav_only, i18n::t("Solo preferiti nell'albero"));
+                let dark = ui.visuals().dark_mode;
+                if ui.button(if dark { i18n::t("Tema chiaro") } else { i18n::t("Tema scuro") }).clicked() {
+                    ui.ctx().set_theme(if dark { egui::Theme::Light } else { egui::Theme::Dark });
+                }
+            });
+            ui.menu_button(i18n::t("Preferiti"), |ui| {
+                let sel = self.selected.clone();
+                let label = match &sel {
+                    Some(o) if is_favorite(&self.favorites, o) => format!("Rimuovi «{}» dai preferiti", o.name),
+                    Some(o) => format!("Aggiungi «{}» ai preferiti", o.name),
+                    None => "Aggiungi ai preferiti (seleziona un oggetto)".into(),
+                };
+                if ui.add_enabled(sel.is_some(), egui::Button::new(label)).clicked()
+                    && let Some(o) = sel
+                {
+                    self.toggle_favorite(&o);
+                }
+                ui.separator();
+                if self.favorites.is_empty() {
+                    ui.label(RichText::new(i18n::t("Nessun preferito: clic destro su un oggetto › Aggiungi ai preferiti")).weak());
+                }
+                let mut open = None;
+                for f in &self.favorites {
+                    let conn = self.cfg(&f.conn).map(|c| c.name.clone()).unwrap_or_else(|| "?".into());
+                    let place = if f.db.is_empty() || f.db == "main" { conn } else { format!("{} › {conn}", f.db) };
+                    if icons::menu_item(ui, icon(f.kind), &format!("{}   ({place})", f.name)).clicked() {
+                        open = Some(f.clone());
+                    }
+                }
+                if let Some(f) = open {
+                    self.open_favorite(&f);
+                }
+                if !self.favorites.is_empty() {
+                    ui.separator();
+                    if ui.button(i18n::t("Svuota preferiti")).clicked() {
+                        self.favorites.clear();
+                        if let Err(e) = store::save_favorites(&self.favorites) {
+                            self.notify(e, true);
+                        }
+                    }
+                }
+            });
+            ui.menu_button(i18n::t("Strumenti"), |ui| {
+                if icons::menu_item(ui, Db::User, "Utenti").clicked() {
+                    self.open_catalog(CatalogKind::Users);
+                }
+                ui.menu_button(i18n::t("Altri oggetti"), |ui| self.others_menu(ui));
+                if icons::menu_item(ui, Db::Backup, "Backup").clicked() {
+                    self.open_backup();
+                }
+                if icons::menu_item(ui, Db::Automation, "Automazione").clicked() {
+                    self.open_automation();
+                }
+                if icons::menu_item(ui, Db::Model, "Modello").clicked() {
+                    self.open_model();
+                }
+                if icons::menu_item(ui, Db::QueryBuilder, "Query Builder").clicked()
+                    && let Some(l) = self.loc.clone()
+                {
+                    self.actions.push(Action::NewBuilder(l));
+                }
+                ui.separator();
+                ui.menu_button(i18n::t("Aggiornamenti"), |ui| self.updater.menu(ui));
+                if icons::menu_item(ui, G::Folder, "Cartella delle impostazioni").clicked()
+                    && let Some(d) = store::config_dir()
+                {
+                    let _ = std::fs::create_dir_all(&d);
+                    crate::selfupdate::open_url(&d.to_string_lossy());
+                }
+            });
+            ui.menu_button(i18n::t("Finestra"), |ui| {
+                let mut go = None;
+                for (i, t) in self.tabs.iter().enumerate() {
+                    if ui.selectable_label(i == self.active, t.title.as_str()).clicked() {
+                        go = Some(i);
+                    }
+                }
+                if let Some(i) = go {
+                    self.active = i;
+                }
+                ui.separator();
+                if ui.add_enabled(self.tabs.len() > 1, egui::Button::new(i18n::t("Chiudi tutte le schede"))).clicked() {
+                    for i in (1..self.tabs.len()).rev() {
+                        self.close_tab(i);
+                    }
+                }
+            });
+            ui.menu_button(i18n::t("Aiuto"), |ui| {
+                if ui.button(i18n::t("Sito di DbCraft (GitHub)")).clicked() {
+                    crate::selfupdate::open_url(&format!("https://github.com/{}", crate::update::REPO));
+                }
+                if ui.button(i18n::t("Novità delle versioni")).clicked() {
+                    crate::selfupdate::open_url(&format!("https://github.com/{}/releases", crate::update::REPO));
+                }
+                ui.separator();
+                if ui.button(i18n::t("Informazioni su DbCraft")).clicked() {
+                    self.show_about = true;
+                }
+            });
+        });
+    }
+
+    /// Visualizza › Lingua: the system's or one of the interface languages (as in OpenSlate).
+    fn language_menu(&mut self, ui: &mut egui::Ui) {
+        use crate::i18n::Lang;
+        let current = self.updater.settings.ui_lang.clone();
+        let auto = format!("{} ({})", i18n::t("Automatica, come il sistema"), i18n::system().native());
+        let mut choice = None;
+        if ui.selectable_label(current == "auto" || Lang::from_code(&current).is_none(), auto).clicked() {
+            choice = Some("auto".to_string());
+        }
+        ui.separator();
+        for l in Lang::ALL {
+            if ui.selectable_label(current == l.code(), l.native()).clicked() {
+                choice = Some(l.code().to_string());
+            }
+        }
+        if let Some(code) = choice {
+            self.updater.settings.ui_lang = code;
+            self.updater.settings.save();
+            i18n::set_lang(i18n::resolve(&self.updater.settings.ui_lang));
+            crate::fonts::apply(ui.ctx());
+            ui.close();
+        }
+    }
+
+    fn close_tab(&mut self, i: usize) {
+        if i == 0 || i >= self.tabs.len() {
+            return;
+        }
+        let dirty = match &self.tabs[i].tab {
+            Tab::Table(t) => !t.edits.is_empty(),
+            _ => false,
+        };
+        if dirty {
+            self.notify("La tabella ha modifiche non salvate: applicale o annullale prima di chiudere", true);
+            return;
+        }
+        self.tabs.remove(i);
+        if self.active >= i {
+            self.active = self.active.saturating_sub(1);
+        }
+    }
+
     fn tree_ui(&mut self, ui: &mut egui::Ui) {
         let mut connect = None;
         let mut disconnect = None;
@@ -651,12 +1144,34 @@ impl App {
         let mut select_loc: Option<Location> = None;
         let mut select_obj: Option<ObjRef> = None;
         let mut open_obj: Option<ObjRef> = None;
+        let mut collapse = false;
+
+        // bottom of the tree, as in Navicat: search, only favorites, collapse all
+        egui::Panel::bottom("tree_footer").exact_size(30.0).show(ui, |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                icons::show(ui, G::Search, 14.0);
+                let w = (ui.available_width() - 56.0).max(60.0);
+                let r = ui.add(egui::TextEdit::singleline(&mut self.tree_filter).id(egui::Id::unique("tree_search")).hint_text(i18n::t("Cerca")).desired_width(w));
+                if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.tree_filter.clear();
+                }
+                let star = icons::button_ex(ui, Db::Star, "", self.fav_only, true).on_hover_text(if self.fav_only { i18n::t("Mostra tutti gli oggetti") } else { i18n::t("Mostra solo i preferiti") });
+                if star.clicked() {
+                    self.fav_only = !self.fav_only;
+                }
+                if icons::small(ui, G::Collapse, "Comprimi tutto", true).clicked() {
+                    collapse = true;
+                }
+            });
+        });
+        let filter = TreeFilter { text: self.tree_filter.trim().to_lowercase(), fav_only: self.fav_only, favs: &self.favorites, generation: self.tree_gen };
 
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             if self.configs.is_empty() {
                 ui.add_space(8.0);
-                ui.label(RichText::new("Nessuna connessione.\nUsa «Connessione» nella barra in alto.").weak());
+                ui.label(RichText::new(i18n::t("Nessuna connessione.\nUsa «Connessione» nella barra in alto.")).weak());
             }
             for cfg in &self.configs {
                 let node = self.tree.entry(cfg.id.clone()).or_default();
@@ -675,19 +1190,19 @@ impl App {
                 }
                 r.resp.context_menu(|ui| {
                     if connected || loading {
-                        if ui.button("Chiudi connessione").clicked() {
+                        if ui.button(i18n::t("Chiudi connessione")).clicked() {
                             disconnect = Some(cfg.id.clone());
                         }
-                    } else if ui.button("Apri connessione").clicked() {
+                    } else if ui.button(i18n::t("Apri connessione")).clicked() {
                         connect = Some(cfg.id.clone());
                     }
-                    if ui.button("Modifica connessione…").clicked() {
+                    if ui.button(i18n::t("Modifica connessione…")).clicked() {
                         edit = Some(cfg.id.clone());
                     }
-                    if ui.button("Elimina connessione").clicked() {
+                    if ui.button(i18n::t("Elimina connessione")).clicked() {
                         delete = Some(cfg.id.clone());
                     }
-                    if connected && ui.button("Nuova query").clicked() {
+                    if connected && ui.button(i18n::t("Nuova query")).clicked() {
                         self.actions.push(Action::NewQuery(Location { conn: cfg.id.clone(), db: String::new(), schema: None }));
                     }
                 });
@@ -716,14 +1231,14 @@ impl App {
                         select_loc = Some(here.clone());
                     }
                     r.resp.context_menu(|ui| {
-                        if ui.button("Nuova query").clicked() {
+                        if ui.button(i18n::t("Nuova query")).clicked() {
                             self.actions.push(Action::NewQuery(here.clone()));
                         }
                         if db.schemas.ready().is_some_and(Vec::is_empty) {
-                            if ui.button("Nuova tabella").clicked() {
+                            if ui.button(i18n::t("Nuova tabella")).clicked() {
                                 self.actions.push(Action::NewTable(here.clone()));
                             }
-                            if ui.button("Aggiorna").clicked() {
+                            if ui.button(i18n::t("Aggiorna")).clicked() {
                                 load_objects = Some(here.clone());
                             }
                         }
@@ -745,7 +1260,7 @@ impl App {
                             });
                         }
                         Load::Ready(schemas) if schemas.is_empty() => {
-                            objects_tree(ui, 2, &db.objects, &here, self.selected.as_ref(), &mut select_obj, &mut open_obj, &mut self.actions);
+                            objects_tree(ui, 2, &db.objects, &here, self.selected.as_ref(), &mut select_obj, &mut open_obj, &mut self.actions, &filter);
                         }
                         Load::Ready(schemas) => {
                             for s in schemas.iter_mut() {
@@ -764,18 +1279,18 @@ impl App {
                                     }
                                 }
                                 r.resp.context_menu(|ui| {
-                                    if ui.button("Nuova query").clicked() {
+                                    if ui.button(i18n::t("Nuova query")).clicked() {
                                         self.actions.push(Action::NewQuery(sl.clone()));
                                     }
-                                    if ui.button("Nuova tabella").clicked() {
+                                    if ui.button(i18n::t("Nuova tabella")).clicked() {
                                         self.actions.push(Action::NewTable(sl.clone()));
                                     }
-                                    if ui.button("Aggiorna").clicked() {
+                                    if ui.button(i18n::t("Aggiorna")).clicked() {
                                         load_objects = Some(sl.clone());
                                     }
                                 });
                                 if s.open {
-                                    objects_tree(ui, 3, &s.objects, &sl, self.selected.as_ref(), &mut select_obj, &mut open_obj, &mut self.actions);
+                                    objects_tree(ui, 3, &s.objects, &sl, self.selected.as_ref(), &mut select_obj, &mut open_obj, &mut self.actions, &filter);
                                 }
                             }
                         }
@@ -785,6 +1300,21 @@ impl App {
             }
         });
 
+        if collapse {
+            for n in self.tree.values_mut() {
+                if let Some(Load::Ready(dbs)) = &mut n.dbs {
+                    for d in dbs.iter_mut() {
+                        d.open = false;
+                        if let Load::Ready(ss) = &mut d.schemas {
+                            for s in ss.iter_mut() {
+                                s.open = false;
+                            }
+                        }
+                    }
+                }
+            }
+            self.tree_gen += 1;
+        }
         if let Some(c) = connect {
             self.connect(&c);
         }
@@ -834,6 +1364,10 @@ impl App {
                         Tab::Table(_) => Db::Table.into(),
                         Tab::Query(_) => Db::Query.into(),
                         Tab::Designer(_) => Db::Design.into(),
+                        Tab::Catalog(c) => c.kind.icon(),
+                        Tab::Backup(_) => Db::Backup.into(),
+                        Tab::Automation(_) => Db::Automation.into(),
+                        Tab::Model(_) => Db::Model.into(),
                     };
                     let frame = egui::Frame::new()
                         .fill(if selected { ui.visuals().extreme_bg_color } else { ui.visuals().faint_bg_color })
@@ -843,7 +1377,7 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
                             icons::show(ui, glyph, 15.0);
-                            let label = ui.add(egui::Label::new(RichText::new(t.title.as_str()).strong_if(selected)).sense(egui::Sense::click()));
+                            let label = ui.add(egui::Label::new(RichText::new(i18n::tr(&t.title)).strong_if(selected)).sense(egui::Sense::click()));
                             if label.clicked() {
                                 self.active = i;
                             }
@@ -859,18 +1393,7 @@ impl App {
             });
         });
         if let Some(i) = close {
-            let dirty = match &self.tabs[i].tab {
-                Tab::Table(t) => !t.edits.is_empty(),
-                _ => false,
-            };
-            if dirty {
-                self.notify("La tabella ha modifiche non salvate: applicale o annullale prima di chiudere", true);
-            } else {
-                self.tabs.remove(i);
-                if self.active >= i {
-                    self.active = self.active.saturating_sub(1);
-                }
-            }
+            self.close_tab(i);
         }
     }
 
@@ -891,17 +1414,42 @@ impl App {
                     ui.label(RichText::new(sc.as_str()).small());
                 }
             }
+            if self.active == 0
+                && let Some(l) = &self.loc
+            {
+                let text = if self.objects_queries {
+                    let n = store::list_files(&store::place_dir("queries", &l.conn, &l.db, l.schema.as_deref()), "sql").len();
+                    format!("{n} query")
+                } else if let Some(Load::Ready(objs)) = self.objects_at(l) {
+                    let n = objs.iter().filter(|o| self.objects_kinds.contains(&o.kind)).count();
+                    let what = match self.objects_kinds.as_slice() {
+                        [ObjectKind::Table] => "tabelle",
+                        [ObjectKind::View] => "viste",
+                        [ObjectKind::Trigger] => "trigger",
+                        [ObjectKind::Function, ..] => "funzioni e procedure",
+                        _ => "oggetti",
+                    };
+                    let what = i18n::t(what);
+                    format!("{n} {what}")
+                } else {
+                    String::new()
+                };
+                if !text.is_empty() {
+                    ui.separator();
+                    ui.label(RichText::new(i18n::tf(text)).small());
+                }
+            }
             if let Some(TabEntry { tab: Tab::Table(t), .. }) = self.tabs.get(self.active) {
                 ui.separator();
-                ui.label(RichText::new(t.status_text()).small());
+                ui.label(RichText::new(i18n::tf(t.status_text())).small());
             }
             if let Some(TabEntry { tab: Tab::Query(t), .. }) = self.tabs.get(self.active) {
                 ui.separator();
-                ui.label(RichText::new(t.status_text()).small());
+                ui.label(RichText::new(i18n::tf(t.status_text())).small());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(t.cursor_text()).small());
                     ui.separator();
-                    ui.label(RichText::new(t.completion_text()).small().weak());
+                    ui.label(RichText::new(i18n::tf(t.completion_text())).small().weak());
                 });
             }
         });
@@ -963,11 +1511,63 @@ impl App {
             tab.debug_editor(&spec);
             self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
         }
+        if let Some(f) = self.cli.tree_filter.take() {
+            self.tree_filter = f;
+        }
+        if self.objects_at(&loc).is_some_and(|o| matches!(o, Load::Ready(_)))
+            && let Some(what) = self.cli.open.take()
+        {
+            match what.as_str() {
+                "users" => self.open_catalog(CatalogKind::Users),
+                "backup" => self.open_backup(),
+                "automation" => self.open_automation(),
+                "model" => self.open_model(),
+                "queries" => {
+                    self.objects_queries = true;
+                    self.active = 0;
+                }
+                "about" => self.show_about = true,
+                other => {
+                    if let Some(k) = other.strip_prefix("others:") {
+                        let kind = [CatalogKind::Indexes, CatalogKind::Sequences, CatalogKind::Events, CatalogKind::Types, CatalogKind::Extensions, CatalogKind::Synonyms]
+                            .into_iter()
+                            .find(|c| c.label().eq_ignore_ascii_case(k));
+                        if let Some(c) = kind {
+                            self.open_catalog(c);
+                        }
+                    }
+                }
+            }
+        }
         if let Some(sql) = self.cli.query.take() {
             let id = self.next_id;
             let mut tab = QueryTab::new(id, loc);
             tab.set_sql(sql, true);
             self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
+        }
+    }
+
+    fn about(&mut self, ctx: &egui::Context) {
+        if !self.show_about {
+            return;
+        }
+        let mut close = false;
+        egui::Modal::new(egui::Id::unique("about")).show(ctx, |ui| {
+            ui.set_width(340.0);
+            ui.vertical_centered(|ui| {
+                icons::show(ui, Db::Database, 40.0);
+                ui.heading(i18n::tf(format!("DbCraft {}", crate::update::current())));
+                ui.label(i18n::t("Client per MySQL, MariaDB, PostgreSQL, SQL Server e SQLite"));
+                ui.label(RichText::new(i18n::t("Open source · MIT OR Apache-2.0")).weak());
+                ui.hyperlink_to(i18n::t("github.com/rmpaolillo/DbCraft"), format!("https://github.com/{}", crate::update::REPO));
+                ui.add_space(6.0);
+                if ui.button(i18n::t("Chiudi")).clicked() {
+                    close = true;
+                }
+            });
+        });
+        if close {
+            self.show_about = false;
         }
     }
 
@@ -1031,6 +1631,7 @@ pub enum ConfirmKind {
     Drop(ObjRef),
     Truncate(ObjRef),
     DeleteConn(String),
+    DeleteFile(std::path::PathBuf),
 }
 
 trait StrongIf {
@@ -1050,6 +1651,30 @@ pub fn close_button(ui: &mut egui::Ui) -> egui::Response {
     }
     icons::paint(ui.painter(), rect.shrink(2.0), G::Close, ui.visuals().weak_text_color());
     resp
+}
+
+/// What the tree shows: the search text and "only favorites".
+struct TreeFilter<'a> {
+    text: String,
+    fav_only: bool,
+    favs: &'a [store::Favorite],
+    /// Bumped by "Comprimi tutto" (the groups start closed again).
+    generation: u64,
+}
+
+impl TreeFilter<'_> {
+    fn active(&self) -> bool {
+        !self.text.is_empty() || self.fav_only
+    }
+
+    fn keeps(&self, obj: &ObjRef) -> bool {
+        (self.text.is_empty() || obj.name.to_lowercase().contains(&self.text)) && (!self.fav_only || is_favorite(self.favs, obj))
+    }
+}
+
+/// The frame of a selected toolbar tile.
+fn selected_frame(ui: &egui::Ui, r: &egui::Response) {
+    ui.painter().rect_stroke(r.rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
 }
 
 struct TreeRow {
@@ -1096,6 +1721,7 @@ fn objects_tree(
     select: &mut Option<ObjRef>,
     open: &mut Option<ObjRef>,
     actions: &mut Vec<Action>,
+    filter: &TreeFilter<'_>,
 ) {
     match objects {
         Load::Loading => {
@@ -1113,23 +1739,24 @@ fn objects_tree(
         Load::NotLoaded => {}
         Load::Ready(objs) => {
             for kind in [ObjectKind::Table, ObjectKind::View, ObjectKind::Function, ObjectKind::Procedure, ObjectKind::Trigger] {
-                let items: Vec<&SchemaObject> = objs.iter().filter(|o| o.kind == kind).collect();
-                if items.is_empty() && !matches!(kind, ObjectKind::Table | ObjectKind::View) {
+                let make = |o: &SchemaObject| ObjRef { conn: loc.conn.clone(), db: loc.db.clone(), schema: loc.schema.clone(), name: o.name.clone(), kind: o.kind };
+                let items: Vec<&SchemaObject> = objs.iter().filter(|o| o.kind == kind && filter.keeps(&make(o))).collect();
+                if items.is_empty() && (filter.active() || !matches!(kind, ObjectKind::Table | ObjectKind::View)) {
                     continue;
                 }
-                let id = ui.make_persistent_id(("grp", loc, kind));
-                let mut is_open = ui.data_mut(|d| *d.get_persisted_mut_or(id, kind == ObjectKind::Table));
-                let r = tree_row(ui, depth, Some(is_open), icon(kind).into(), None, &format!("{} ({})", kind.label(), items.len()), false);
+                let id = ui.make_persistent_id(("grp", loc, kind, filter.generation));
+                let mut is_open = ui.data_mut(|d| *d.get_persisted_mut_or(id, kind == ObjectKind::Table)) || filter.active();
+                let r = tree_row(ui, depth, Some(is_open), icon(kind).into(), None, &format!("{} ({})", i18n::t(kind.label()), items.len()), false);
                 if r.toggled || r.resp.double_clicked() {
                     is_open = !is_open;
                     ui.data_mut(|d| d.insert_persisted(id, is_open));
                 }
                 if kind == ObjectKind::Table {
                     r.resp.context_menu(|ui| {
-                        if ui.button("Nuova tabella").clicked() {
+                        if ui.button(i18n::t("Nuova tabella")).clicked() {
                             actions.push(Action::NewTable(loc.clone()));
                         }
-                        if ui.button("Aggiorna").clicked() {
+                        if ui.button(i18n::t("Aggiorna")).clicked() {
                             actions.push(Action::Refresh(loc.clone()));
                         }
                     });
@@ -1139,14 +1766,19 @@ fn objects_tree(
                 }
                 for o in items {
                     let obj = ObjRef { conn: loc.conn.clone(), db: loc.db.clone(), schema: loc.schema.clone(), name: o.name.clone(), kind: o.kind };
+                    let fav = is_favorite(filter.favs, &obj);
                     let r = tree_row(ui, depth + 1, None, icon(kind).into(), None, &o.name, selected == Some(&obj));
+                    if fav {
+                        let star = egui::Rect::from_center_size(egui::pos2(r.resp.rect.right() - 12.0, r.resp.rect.center().y), egui::vec2(11.0, 11.0));
+                        icons::paint(ui.painter(), star, Db::Star, ui.visuals().text_color());
+                    }
                     if r.resp.clicked() {
                         *select = Some(obj.clone());
                     }
                     if r.resp.double_clicked() {
                         *open = Some(obj.clone());
                     }
-                    objects::object_menu(&r.resp, &obj, actions);
+                    objects::object_menu(&r.resp, &obj, fav, actions);
                 }
             }
         }
@@ -1170,6 +1802,8 @@ impl eframe::App for App {
         for (text, error) in std::mem::take(&mut self.updater.notices) {
             self.notify(text, error);
         }
+        self.run_due_jobs(&ctx);
+        egui::Panel::top("menubar").show(ui, |ui| self.menu_bar(ui));
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.add_space(2.0);
             self.toolbar(ui);
@@ -1196,11 +1830,16 @@ impl eframe::App for App {
             if let Some(entry) = self.tabs.get_mut(active) {
                 let id = entry.id;
                 match &mut entry.tab {
+                    Tab::Objects if self.objects_queries => objects::queries_ui(ui, loc.as_ref(), &mut self.objects_filter, &mut self.query_sel, &mut env),
                     Tab::Objects => {
                         let mut sel = self.selected.clone();
-                        objects::ui(ui, loc.as_ref(), objects_snapshot.as_ref(), loading, &mut self.objects_filter, &self.objects_kinds, &mut sel, &mut env);
+                        objects::ui(ui, loc.as_ref(), objects_snapshot.as_ref(), loading, &mut self.objects_filter, &self.objects_kinds, &mut sel, &self.favorites, &mut env);
                         self.selected = sel;
                     }
+                    Tab::Catalog(t) => t.ui(ui, &mut env),
+                    Tab::Backup(t) => t.ui(ui, &mut env),
+                    Tab::Automation(t) => t.ui(ui, &mut env, &mut self.jobs, &self.running_jobs, loc.as_ref()),
+                    Tab::Model(t) => t.ui(ui, &mut env),
                     Tab::Table(t) => t.ui(ui, &mut env),
                     Tab::Query(t) => t.ui(ui, &mut env),
                     Tab::Designer(t) => t.ui(ui, &mut env, id),
@@ -1209,6 +1848,7 @@ impl eframe::App for App {
         });
 
         self.dialogs(&ctx);
+        self.about(&ctx);
         self.notices_ui(&ctx);
         self.apply_actions();
     }

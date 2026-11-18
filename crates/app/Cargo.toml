@@ -28,6 +28,8 @@ rfd = "0.18"
 csv = "1"
 rust_xlsxwriter = "0.102"
 dirs = "6"
+# interface language: the system one (src/i18n.rs)
+sys-locale = "0.3"
 # self-update from the GitHub releases (src/update.rs, src/selfupdate.rs)
 ureq = { version = "2", features = ["json"] }
 sha2 = "0.10"

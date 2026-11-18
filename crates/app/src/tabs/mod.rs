@@ -1,7 +1,11 @@
+pub mod automation;
+pub mod backup;
 pub mod builder;
+pub mod catalog;
 pub mod complete;
 pub mod designer;
 pub mod filter;
+pub mod model;
 pub mod objects;
 pub mod query;
 pub mod table;

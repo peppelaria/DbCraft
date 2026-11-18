@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ObjectKind {
+    #[default]
     Table,
     View,
     Function,
@@ -30,12 +31,20 @@ impl ObjectKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SchemaObject {
     pub name: String,
     pub kind: ObjectKind,
     pub rows: Option<i64>,
     pub comment: Option<String>,
+    /// Next AUTO_INCREMENT / identity value (tables).
+    pub auto_increment: Option<i64>,
+    /// Last change of the data or the structure, as the server reports it.
+    pub modified: Option<String>,
+    /// Size of the data on disk, in bytes.
+    pub data_length: Option<i64>,
+    /// Storage engine (MySQL/MariaDB).
+    pub engine: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]

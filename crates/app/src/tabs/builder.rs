@@ -9,6 +9,7 @@ use egui::{Align2, Color32, CursorIcon, FontId, Pos2, Rect, RichText, Sense, Str
 
 use crate::models::kind_of;
 use crate::tabs::filter::{FilterSort, quote_path};
+use crate::i18n;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JoinKind {
@@ -398,14 +399,14 @@ impl QueryBuilder {
     pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<bool> {
         let mut out = None;
         ui.horizontal(|ui| {
-            ui.heading("Query Builder");
-            ui.label(RichText::new("Trascina le tabelle sulla tela; trascina una colonna su un'altra colonna per unire le tabelle.").small().weak());
+            ui.heading(i18n::t("Query Builder"));
+            ui.label(RichText::new(i18n::t("Trascina le tabelle sulla tela; trascina una colonna su un'altra colonna per unire le tabelle.")).small().weak());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let ok = egui::Button::new(RichText::new("OK — usa questa query").color(Color32::WHITE).strong()).fill(Color32::from_rgb(0x1F, 0x6F, 0xD0));
+                let ok = egui::Button::new(RichText::new(i18n::t("OK — usa questa query")).color(Color32::WHITE).strong()).fill(Color32::from_rgb(0x1F, 0x6F, 0xD0));
                 if ui.add_enabled(!self.tables.is_empty(), ok).clicked() {
                     out = Some(true);
                 }
-                if ui.button("Annulla").clicked() {
+                if ui.button(i18n::t("Annulla")).clicked() {
                     out = Some(false);
                 }
             });
@@ -415,7 +416,7 @@ impl QueryBuilder {
         egui::Panel::left("qb-tables").resizable(true).default_size(200.0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 icons::show(ui, G::Search, 16.0);
-                ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Cerca tabella").desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(i18n::t("Cerca tabella")).desired_width(f32::INFINITY));
             });
             let mut add = None;
             egui::ScrollArea::vertical().show(ui, |ui| match &self.available {
@@ -434,7 +435,7 @@ impl QueryBuilder {
                                 ui.add(egui::Label::new(n.as_str()).sense(Sense::click_and_drag()))
                             })
                             .inner
-                            .on_hover_text("Doppio clic o trascina sulla tela");
+                            .on_hover_text(i18n::t("Doppio clic o trascina sulla tela"));
                         r.dnd_set_drag_payload(n.clone());
                         if r.double_clicked() {
                             add = Some(n.clone());
@@ -449,13 +450,13 @@ impl QueryBuilder {
 
         egui::Panel::bottom("qb-bottom").resizable(true).default_size(260.0).min_size(140.0).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.pane, Pane::Fields, format!("Campi ({})", self.fields.len()));
-                ui.selectable_value(&mut self.pane, Pane::Conditions, "Condizioni e ordinamento");
-                ui.selectable_value(&mut self.pane, Pane::Sql, "SQL");
+                ui.selectable_value(&mut self.pane, Pane::Fields, i18n::tf(format!("Campi ({})", self.fields.len())));
+                ui.selectable_value(&mut self.pane, Pane::Conditions, i18n::t("Condizioni e ordinamento"));
+                ui.selectable_value(&mut self.pane, Pane::Sql, i18n::t("SQL"));
                 ui.separator();
-                ui.checkbox(&mut self.distinct, "DISTINCT");
-                ui.label("Limite");
-                ui.add(egui::TextEdit::singleline(&mut self.limit).desired_width(60.0).hint_text("tutte"));
+                ui.checkbox(&mut self.distinct, i18n::t("DISTINCT"));
+                ui.label(i18n::t("Limite"));
+                ui.add(egui::TextEdit::singleline(&mut self.limit).desired_width(60.0).hint_text(i18n::t("tutte")));
             });
             ui.separator();
             match self.pane {
@@ -481,7 +482,7 @@ impl QueryBuilder {
 
     fn fields_ui(&mut self, ui: &mut egui::Ui) {
         if self.fields.is_empty() {
-            ui.label(RichText::new("Nessun campo selezionato: verranno restituite tutte le colonne (*). Spunta le colonne nelle tabelle.").weak());
+            ui.label(RichText::new(i18n::t("Nessun campo selezionato: verranno restituite tutte le colonne (*). Spunta le colonne nelle tabelle.")).weak());
             return;
         }
         let mut remove = None;
@@ -489,7 +490,7 @@ impl QueryBuilder {
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("qb-fields").striped(true).num_columns(5).spacing([10.0, 4.0]).show(ui, |ui| {
                 for h in ["Campo", "Funzione", "Alias", "", ""] {
-                    ui.strong(h);
+                    ui.strong(i18n::t(h));
                 }
                 ui.end_row();
                 let n = self.fields.len();
@@ -502,7 +503,7 @@ impl QueryBuilder {
                             ui.selectable_value(&mut f.agg, a, a.label());
                         }
                     });
-                    ui.add_sized([160.0, ui.spacing().interact_size.y], egui::TextEdit::singleline(&mut f.alias).hint_text("alias"));
+                    ui.add_sized([160.0, ui.spacing().interact_size.y], egui::TextEdit::singleline(&mut f.alias).hint_text(i18n::t("alias")));
                     ui.horizontal(|ui| {
                         if i > 0 && icons::small(ui, G::ChevronUp, "Sposta su", true).clicked() {
                             swap = Some(i);
@@ -515,7 +516,7 @@ impl QueryBuilder {
                 }
             });
             if self.fields.iter().any(|f| f.agg != Agg::None) {
-                ui.label(RichText::new("Con funzioni di aggregazione, i campi senza funzione vengono raggruppati (GROUP BY) automaticamente.").small().weak());
+                ui.label(RichText::new(i18n::t("Con funzioni di aggregazione, i campi senza funzione vengono raggruppati (GROUP BY) automaticamente.")).small().weak());
             }
         });
         if let Some(i) = swap {
@@ -596,13 +597,13 @@ impl QueryBuilder {
             painter.circle_filled(pb, 3.0, color);
             let mid = pos2((pa.x + ca.x + cb.x + pb.x) / 4.0, (pa.y + ca.y + cb.y + pb.y) / 4.0);
             let badge = Rect::from_center_size(mid, vec2(24.0, 18.0));
-            let r = ui.interact(badge, ui.scope_id().with(("join", k)), Sense::click()).on_hover_cursor(CursorIcon::PointingHand).on_hover_text(j.kind.label());
+            let r = ui.interact(badge, ui.scope_id().with(("join", k)), Sense::click()).on_hover_cursor(CursorIcon::PointingHand).on_hover_text(i18n::t(j.kind.label()));
             painter.rect_filled(badge, 4.0, visuals.extreme_bg_color);
             painter.rect_stroke(badge, 4.0, Stroke::new(1.0, color), StrokeKind::Inside);
             painter.text(mid, Align2::CENTER_CENTER, j.kind.short(), FontId::proportional(13.0), color);
             egui::Popup::menu(&r).show(|ui| {
                 for kind in JoinKind::ALL {
-                    if ui.selectable_label(j.kind == kind, kind.label()).clicked() {
+                    if ui.selectable_label(j.kind == kind, i18n::t(kind.label())).clicked() {
                         join_menu = Some(k);
                         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("qb-join-kind"), kind as u8));
                     }

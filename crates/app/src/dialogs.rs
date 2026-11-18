@@ -8,11 +8,12 @@ use egui::RichText;
 use crate::app::{ConfirmKind, ObjRef};
 use crate::backend::{Backend, Msg};
 use crate::export::{self, CsvData, Format};
+use crate::i18n;
 
 fn modal<R>(ctx: &egui::Context, id: &str, title: &str, body: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
     let modal = egui::Modal::new(egui::Id::unique(id)).show(ctx, |ui| {
         ui.set_min_width(460.0);
-        ui.heading(title);
+        ui.heading(i18n::tr(title).into_owned());
         ui.add_space(6.0);
         body(ui)
     });
@@ -104,13 +105,13 @@ impl ConnDialog {
     }
 
     pub fn show(&mut self, ctx: &egui::Context, backend: &Backend) -> Option<ConnOutcome> {
-        let title = format!("{} — {}", if self.is_new { "Nuova connessione" } else { "Modifica connessione" }, self.cfg.kind.label());
+        let title = format!("{} — {}", if self.is_new { i18n::t("Nuova connessione") } else { i18n::t("Modifica connessione") }, self.cfg.kind.label());
         modal(ctx, "conn-dialog", &title, |ui| {
             let mut out = None;
             let sqlite = self.cfg.kind == DbKind::Sqlite;
             if !sqlite {
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.tab, ConnTab::General, "Generale");
+                    ui.selectable_value(&mut self.tab, ConnTab::General, i18n::t("Generale"));
                     let ssl_label = if self.cfg.ssl { "SSL ●" } else { "SSL" };
                     ui.selectable_value(&mut self.tab, ConnTab::Ssl, ssl_label);
                     let ssh_label = if self.cfg.ssh.enabled { "SSH ●" } else { "SSH" };
@@ -131,7 +132,7 @@ impl ConnDialog {
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if ui.button("Prova connessione").clicked() {
+                if ui.button(i18n::t("Prova connessione")).clicked() {
                     let cfg = self.cfg.clone();
                     backend.spawn(async move {
                         match db_drivers::connect(&cfg, None).await {
@@ -149,10 +150,10 @@ impl ConnDialog {
                     });
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add_enabled(!self.cfg.name.trim().is_empty(), egui::Button::new(RichText::new("OK").strong())).clicked() {
+                    if ui.add_enabled(!self.cfg.name.trim().is_empty(), egui::Button::new(RichText::new(i18n::t("OK")).strong())).clicked() {
                         out = Some(ConnOutcome::Save(Box::new(self.cfg.clone())));
                     }
-                    if ui.button("Annulla").clicked() {
+                    if ui.button(i18n::t("Annulla")).clicked() {
                         out = Some(ConnOutcome::Cancel);
                     }
                 });
@@ -165,19 +166,19 @@ impl ConnDialog {
     fn general_ui(&mut self, ui: &mut egui::Ui) {
         let sqlite = self.cfg.kind == DbKind::Sqlite;
         egui::Grid::new("conn-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-            ui.label("Nome connessione:");
+            ui.label(i18n::t("Nome connessione:"));
             ui.add(egui::TextEdit::singleline(&mut self.cfg.name).desired_width(280.0));
             ui.end_row();
             if sqlite {
-                ui.label("File database:");
+                ui.label(i18n::t("File database:"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(220.0).hint_text(":memory:"));
-                    if ui.button("…").on_hover_text("Scegli o crea un file").clicked()
+                    ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(220.0).hint_text(i18n::t(":memory:")));
+                    if ui.button("…").on_hover_text(i18n::t("Scegli o crea un file")).clicked()
                         && let Some(p) = rfd::FileDialog::new().add_filter("SQLite", &["db", "sqlite", "sqlite3", "db3"]).set_file_name("database.db").save_file()
                     {
                         self.cfg.database = p.to_string_lossy().into_owned();
                     }
-                    if ui.button("Apri…").clicked()
+                    if ui.button(i18n::t("Apri…")).clicked()
                         && let Some(p) = rfd::FileDialog::new().pick_file()
                     {
                         self.cfg.database = p.to_string_lossy().into_owned();
@@ -186,39 +187,39 @@ impl ConnDialog {
                 ui.end_row();
                 return;
             }
-            ui.label("Host:");
+            ui.label(i18n::t("Host:"));
             ui.add(egui::TextEdit::singleline(&mut self.cfg.host).desired_width(280.0));
             ui.end_row();
-            ui.label("Porta:");
+            ui.label(i18n::t("Porta:"));
             if ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(80.0)).changed() {
                 self.cfg.port = self.port.trim().parse().unwrap_or(self.cfg.port);
             }
             ui.end_row();
-            ui.label("Nome utente:");
+            ui.label(i18n::t("Nome utente:"));
             ui.add(egui::TextEdit::singleline(&mut self.cfg.user).desired_width(280.0));
             ui.end_row();
-            ui.label("Password:");
+            ui.label(i18n::t("Password:"));
             ui.add(egui::TextEdit::singleline(&mut self.cfg.password).password(true).desired_width(280.0));
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut self.cfg.save_password, "Salva password (Portachiavi)");
+            ui.checkbox(&mut self.cfg.save_password, i18n::t("Salva password (Portachiavi)"));
             ui.end_row();
-            ui.label("Database iniziale:");
-            ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(280.0).hint_text("(facoltativo)"));
+            ui.label(i18n::t("Database iniziale:"));
+            ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(280.0).hint_text(i18n::t("(facoltativo)")));
             ui.end_row();
         });
         if self.cfg.ssh.enabled || self.cfg.http.enabled {
             ui.add_space(6.0);
             let via = if self.cfg.http.enabled { "dal web server del tunnel HTTP" } else { "dal server SSH" };
-            ui.label(RichText::new(format!("Con il tunnel, host e porta sono quelli del database visti {via} (es. localhost).")).small().weak());
+            ui.label(RichText::new(i18n::tf(format!("Con il tunnel, host e porta sono quelli del database visti {via} (es. localhost)."))).small().weak());
         }
     }
 
     fn ssl_ui(&mut self, ui: &mut egui::Ui) {
         let kind = self.cfg.kind;
-        ui.checkbox(&mut self.cfg.ssl, "Usa SSL");
+        ui.checkbox(&mut self.cfg.ssl, i18n::t("Usa SSL"));
         ui.label(
-            RichText::new("Senza SSL la connessione è comunque cifrata se il server lo offre, ma il certificato non viene verificato e il server può rifiutare la cifratura.")
+            RichText::new(i18n::t("Senza SSL la connessione è comunque cifrata se il server lo offre, ma il certificato non viene verificato e il server può rifiutare la cifratura."))
                 .small()
                 .weak(),
         );
@@ -226,27 +227,27 @@ impl ConnDialog {
         let tls = &mut self.cfg.tls;
         ui.add_enabled_ui(self.cfg.ssl, |ui| {
             egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.strong("Verifica del server");
-                ui.radio_value(&mut tls.verify, TlsVerify::None, "Nessuna — cifra soltanto, accetta qualsiasi certificato");
-                ui.radio_value(&mut tls.verify, TlsVerify::Ca, "Verifica il certificato del server con la CA");
+                ui.strong(i18n::t("Verifica del server"));
+                ui.radio_value(&mut tls.verify, TlsVerify::None, i18n::t("Nessuna — cifra soltanto, accetta qualsiasi certificato"));
+                ui.radio_value(&mut tls.verify, TlsVerify::Ca, i18n::t("Verifica il certificato del server con la CA"));
                 let full = if kind == DbKind::SqlServer { "Verifica CA e nome host (su SQL Server equivale alla precedente)" } else { "Verifica CA e nome host" };
                 ui.radio_value(&mut tls.verify, TlsVerify::Full, full);
                 ui.add_space(4.0);
                 egui::Grid::new("ssl-ca").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                    ui.label("Certificato CA:");
+                    ui.label(i18n::t("Certificato CA:"));
                     file_field(ui, &mut tls.ca_cert, "(facoltativo: radici di sistema)");
                     ui.end_row();
                 });
             });
             ui.add_space(6.0);
             egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.strong("Autenticazione con certificato client");
-                ui.label(RichText::new("Per server che richiedono un certificato client (es. utenti MySQL con REQUIRE X509, PostgreSQL con autenticazione cert).").small().weak());
+                ui.strong(i18n::t("Autenticazione con certificato client"));
+                ui.label(RichText::new(i18n::t("Per server che richiedono un certificato client (es. utenti MySQL con REQUIRE X509, PostgreSQL con autenticazione cert).")).small().weak());
                 egui::Grid::new("ssl-client").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                    ui.label("Certificato client:");
+                    ui.label(i18n::t("Certificato client:"));
                     file_field(ui, &mut tls.client_cert, "(facoltativo)");
                     ui.end_row();
-                    ui.label("Chiave client:");
+                    ui.label(i18n::t("Chiave client:"));
                     file_field(ui, &mut tls.client_key, "(facoltativo)");
                     ui.end_row();
                 });
@@ -261,15 +262,15 @@ impl ConnDialog {
 
     fn http_ui(&mut self, ui: &mut egui::Ui) {
         let http_on = self.cfg.http.enabled;
-        if ui.checkbox(&mut self.cfg.http.enabled, "Usa tunnel HTTP").changed() && self.cfg.http.enabled {
+        if ui.checkbox(&mut self.cfg.http.enabled, i18n::t("Usa tunnel HTTP")).changed() && self.cfg.http.enabled {
             self.cfg.ssh.enabled = false;
         }
         ui.label(
-            RichText::new("Carica lo script del tunnel su un web server PHP che raggiunge il database, poi indica qui il suo URL. Disponibile per MySQL/MariaDB e PostgreSQL.")
+            RichText::new(i18n::t("Carica lo script del tunnel su un web server PHP che raggiunge il database, poi indica qui il suo URL. Disponibile per MySQL/MariaDB e PostgreSQL."))
                 .small()
                 .weak(),
         );
-        if ui.button("Salva script del tunnel (dbcraft-tunnel.php)…").clicked()
+        if ui.button(i18n::t("Salva script del tunnel (dbcraft-tunnel.php)…")).clicked()
             && let Some(p) = rfd::FileDialog::new().set_file_name("dbcraft-tunnel.php").add_filter("PHP", &["php"]).save_file()
         {
             let _ = std::fs::write(p, TUNNEL_SCRIPT);
@@ -278,65 +279,65 @@ impl ConnDialog {
         let t = &mut self.cfg.http;
         ui.add_enabled_ui(http_on || t.enabled, |ui| {
             egui::Grid::new("http-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                ui.label("URL del tunnel:");
-                ui.add(egui::TextEdit::singleline(&mut t.url).desired_width(340.0).hint_text("https://example.com/dbcraft-tunnel.php"));
+                ui.label(i18n::t("URL del tunnel:"));
+                ui.add(egui::TextEdit::singleline(&mut t.url).desired_width(340.0).hint_text(i18n::t("https://example.com/dbcraft-tunnel.php")));
                 ui.end_row();
-                ui.label("Token:");
-                ui.add(egui::TextEdit::singleline(&mut t.token).password(true).desired_width(240.0).hint_text("DBCRAFT_TUNNEL_TOKEN (se impostato)"));
+                ui.label(i18n::t("Token:"));
+                ui.add(egui::TextEdit::singleline(&mut t.token).password(true).desired_width(240.0).hint_text(i18n::t("DBCRAFT_TUNNEL_TOKEN (se impostato)")));
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(&mut t.base64, "Codifica le query in base64");
+                ui.checkbox(&mut t.base64, i18n::t("Codifica le query in base64"));
                 ui.end_row();
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.http_tab, HttpTab::Auth, "Autenticazione");
-                ui.selectable_value(&mut self.http_tab, HttpTab::Proxy, "Proxy");
+                ui.selectable_value(&mut self.http_tab, HttpTab::Auth, i18n::t("Autenticazione"));
+                ui.selectable_value(&mut self.http_tab, HttpTab::Proxy, i18n::t("Proxy"));
             });
             egui::Frame::group(ui.style()).show(ui, |ui| match self.http_tab {
                 HttpTab::Auth => {
-                    ui.checkbox(&mut t.basic_auth, "Usa autenticazione con password (HTTP Basic)");
+                    ui.checkbox(&mut t.basic_auth, i18n::t("Usa autenticazione con password (HTTP Basic)"));
                     ui.add_enabled_ui(t.basic_auth, |ui| {
                         egui::Grid::new("http-auth").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                            ui.label("Nome utente:");
+                            ui.label(i18n::t("Nome utente:"));
                             ui.add(egui::TextEdit::singleline(&mut t.user).desired_width(240.0));
                             ui.end_row();
-                            ui.label("Password:");
+                            ui.label(i18n::t("Password:"));
                             ui.add(egui::TextEdit::singleline(&mut t.password).password(true).desired_width(240.0));
                             ui.end_row();
                         });
                     });
-                    ui.checkbox(&mut t.save_password, "Salva password, token e password proxy (Portachiavi)");
+                    ui.checkbox(&mut t.save_password, i18n::t("Salva password, token e password proxy (Portachiavi)"));
                     ui.separator();
-                    ui.label("Autenticazione con certificato (HTTPS)");
+                    ui.label(i18n::t("Autenticazione con certificato (HTTPS)"));
                     egui::Grid::new("http-cert").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                        ui.label("Certificato client:");
+                        ui.label(i18n::t("Certificato client:"));
                         file_field(ui, &mut t.client_cert, "(facoltativo)");
                         ui.end_row();
-                        ui.label("Chiave client:");
+                        ui.label(i18n::t("Chiave client:"));
                         file_field(ui, &mut t.client_key, "(facoltativo, non cifrata)");
                         ui.end_row();
-                        ui.label("Certificato CA:");
+                        ui.label(i18n::t("Certificato CA:"));
                         file_field(ui, &mut t.ca_cert, "(facoltativo)");
                         ui.end_row();
                     });
                 }
                 HttpTab::Proxy => {
-                    ui.checkbox(&mut t.proxy, "Usa proxy");
+                    ui.checkbox(&mut t.proxy, i18n::t("Usa proxy"));
                     ui.add_enabled_ui(t.proxy, |ui| {
                         egui::Grid::new("http-proxy").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                            ui.label("Host:");
+                            ui.label(i18n::t("Host:"));
                             ui.add(egui::TextEdit::singleline(&mut t.proxy_host).desired_width(240.0));
                             ui.end_row();
-                            ui.label("Porta:");
+                            ui.label(i18n::t("Porta:"));
                             if ui.add(egui::TextEdit::singleline(&mut self.proxy_port).desired_width(80.0)).changed() {
                                 t.proxy_port = self.proxy_port.trim().parse().unwrap_or(t.proxy_port);
                             }
                             ui.end_row();
-                            ui.label("Nome utente:");
+                            ui.label(i18n::t("Nome utente:"));
                             ui.add(egui::TextEdit::singleline(&mut t.proxy_user).desired_width(240.0));
                             ui.end_row();
-                            ui.label("Password:");
+                            ui.label(i18n::t("Password:"));
                             ui.add(egui::TextEdit::singleline(&mut t.proxy_password).password(true).desired_width(240.0));
                             ui.end_row();
                         });
@@ -348,38 +349,38 @@ impl ConnDialog {
 
     fn ssh_ui(&mut self, ui: &mut egui::Ui) {
         if self.cfg.http.enabled {
-            ui.label(RichText::new("Il tunnel SSH non si può usare insieme al tunnel HTTP.").weak());
+            ui.label(RichText::new(i18n::t("Il tunnel SSH non si può usare insieme al tunnel HTTP.")).weak());
             return;
         }
         let ssh = &mut self.cfg.ssh;
-        ui.checkbox(&mut ssh.enabled, "Usa tunnel SSH");
+        ui.checkbox(&mut ssh.enabled, i18n::t("Usa tunnel SSH"));
         ui.add_space(4.0);
         ui.add_enabled_ui(ssh.enabled, |ui| {
             egui::Grid::new("ssh-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                ui.label("Host:");
-                ui.add(egui::TextEdit::singleline(&mut ssh.host).desired_width(280.0).hint_text("server SSH"));
+                ui.label(i18n::t("Host:"));
+                ui.add(egui::TextEdit::singleline(&mut ssh.host).desired_width(280.0).hint_text(i18n::t("server SSH")));
                 ui.end_row();
-                ui.label("Porta:");
+                ui.label(i18n::t("Porta:"));
                 if ui.add(egui::TextEdit::singleline(&mut self.ssh_port).desired_width(80.0)).changed() {
                     ssh.port = self.ssh_port.trim().parse().unwrap_or(ssh.port);
                 }
                 ui.end_row();
-                ui.label("Nome utente:");
+                ui.label(i18n::t("Nome utente:"));
                 ui.add(egui::TextEdit::singleline(&mut ssh.user).desired_width(280.0));
                 ui.end_row();
-                ui.label("Metodo di autenticazione:");
+                ui.label(i18n::t("Metodo di autenticazione:"));
                 egui::ComboBox::from_id_salt("ssh-auth")
-                    .selected_text(if ssh.auth == SshAuth::Password { "Password" } else { "Chiave pubblica" })
+                    .selected_text(if ssh.auth == SshAuth::Password { i18n::t("Password") } else { i18n::t("Chiave pubblica") })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut ssh.auth, SshAuth::Password, "Password");
-                        ui.selectable_value(&mut ssh.auth, SshAuth::PublicKey, "Chiave pubblica");
+                        ui.selectable_value(&mut ssh.auth, SshAuth::Password, i18n::t("Password"));
+                        ui.selectable_value(&mut ssh.auth, SshAuth::PublicKey, i18n::t("Chiave pubblica"));
                     });
                 ui.end_row();
                 if ssh.auth == SshAuth::PublicKey {
-                    ui.label("Chiave privata:");
+                    ui.label(i18n::t("Chiave privata:"));
                     ui.horizontal(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut ssh.key_path).desired_width(230.0).hint_text("~/.ssh/id_ed25519"));
-                        if ui.button("…").on_hover_text("Scegli il file della chiave privata").clicked() {
+                        ui.add(egui::TextEdit::singleline(&mut ssh.key_path).desired_width(230.0).hint_text(i18n::t("~/.ssh/id_ed25519")));
+                        if ui.button("…").on_hover_text(i18n::t("Scegli il file della chiave privata")).clicked() {
                             let mut dialog = rfd::FileDialog::new();
                             if let Some(home) = std::env::var_os("HOME") {
                                 dialog = dialog.set_directory(std::path::Path::new(&home).join(".ssh"));
@@ -390,24 +391,24 @@ impl ConnDialog {
                         }
                     });
                     ui.end_row();
-                    ui.label("Passphrase:");
-                    ui.add(egui::TextEdit::singleline(&mut ssh.password).password(true).desired_width(280.0).hint_text("(vuota se la chiave non è protetta)"));
+                    ui.label(i18n::t("Passphrase:"));
+                    ui.add(egui::TextEdit::singleline(&mut ssh.password).password(true).desired_width(280.0).hint_text(i18n::t("(vuota se la chiave non è protetta)")));
                     ui.end_row();
                 } else {
-                    ui.label("Password:");
+                    ui.label(i18n::t("Password:"));
                     ui.add(egui::TextEdit::singleline(&mut ssh.password).password(true).desired_width(280.0));
                     ui.end_row();
                 }
                 ui.label("");
                 let what = if ssh.auth == SshAuth::Password { "password" } else { "passphrase" };
-                ui.checkbox(&mut ssh.save_password, format!("Salva {what} (Portachiavi)"));
+                ui.checkbox(&mut ssh.save_password, i18n::tf(format!("Salva {what} (Portachiavi)")));
                 ui.end_row();
             });
         });
         ui.add_space(6.0);
         ui.label(
             RichText::new(
-                "La chiave del server SSH viene confrontata con ~/.ssh/known_hosts: se è cambiata la connessione viene rifiutata.",
+                i18n::t("La chiave del server SSH viene confrontata con ~/.ssh/known_hosts: se è cambiata la connessione viene rifiutata."),
             )
             .small()
             .weak(),
@@ -418,9 +419,9 @@ impl ConnDialog {
 /// A path field with a "…" file picker (PEM files).
 fn file_field(ui: &mut egui::Ui, path: &mut String, hint: &str) {
     ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(path).desired_width(260.0).hint_text(hint));
-        if ui.button("…").on_hover_text("Scegli il file").clicked()
-            && let Some(p) = rfd::FileDialog::new().add_filter("Certificati e chiavi", &["pem", "crt", "cer", "key"]).add_filter("Tutti i file", &["*"]).pick_file()
+        ui.add(egui::TextEdit::singleline(path).desired_width(260.0).hint_text(i18n::tr(hint).into_owned()));
+        if ui.button("…").on_hover_text(i18n::t("Scegli il file")).clicked()
+            && let Some(p) = rfd::FileDialog::new().add_filter(i18n::t("Certificati e chiavi"), &["pem", "crt", "cer", "key"]).add_filter(i18n::t("Tutti i file"), &["*"]).pick_file()
         {
             *path = p.to_string_lossy().into_owned();
         }
@@ -463,13 +464,13 @@ impl ExportDialog {
             }
             ui.add_space(4.0);
             if self.format != Format::Json && self.format != Format::Sql {
-                ui.checkbox(&mut self.header, "Includi intestazioni di colonna");
+                ui.checkbox(&mut self.header, i18n::t("Includi intestazioni di colonna"));
             }
             ui.add_space(8.0);
             let mut keep = true;
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(RichText::new("Esporta…").strong()).clicked() {
+                    if ui.button(RichText::new(i18n::t("Esporta…")).strong()).clicked() {
                         let fmt = self.format;
                         if let Some(path) = rfd::FileDialog::new().add_filter(fmt.ext(), &[fmt.ext()]).set_file_name(format!("{name}.{}", fmt.ext())).save_file() {
                             let header = self.header;
@@ -477,7 +478,7 @@ impl ExportDialog {
                             keep = false;
                         }
                     }
-                    if ui.button("Annulla").clicked() {
+                    if ui.button(i18n::t("Annulla")).clicked() {
                         keep = false;
                     }
                 });
@@ -607,10 +608,10 @@ impl ImportDialog {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("Delimitatore:");
+                ui.label(i18n::t("Delimitatore:"));
                 let mut changed = ui.add(egui::TextEdit::singleline(&mut self.delimiter).desired_width(30.0)).changed();
-                changed |= ui.checkbox(&mut self.header, "Prima riga = intestazioni").changed();
-                ui.checkbox(&mut self.empty_null, "Celle vuote = NULL");
+                changed |= ui.checkbox(&mut self.header, i18n::t("Prima riga = intestazioni")).changed();
+                ui.checkbox(&mut self.empty_null, i18n::t("Celle vuote = NULL"));
                 if changed {
                     self.read();
                 }
@@ -620,23 +621,23 @@ impl ImportDialog {
             }
             if let Some(d) = &self.data {
                 ui.separator();
-                ui.label(format!("{} righe lette. Associa i campi:", d.rows.len()));
+                ui.label(i18n::tf(format!("{} righe lette. Associa i campi:", d.rows.len())));
                 egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                     egui::Grid::new("import-map").num_columns(3).striped(true).show(ui, |ui| {
-                        ui.strong("Campo sorgente");
-                        ui.strong("Esempio");
-                        ui.strong("Campo destinazione");
+                        ui.strong(i18n::t("Campo sorgente"));
+                        ui.strong(i18n::t("Esempio"));
+                        ui.strong(i18n::t("Campo destinazione"));
                         ui.end_row();
                         for (i, h) in d.headers.iter().enumerate() {
                             ui.label(h);
                             ui.label(RichText::new(d.rows.first().and_then(|r| r.get(i)).cloned().unwrap_or_default()).weak());
                             let cur = self.mapping.get(i).copied().flatten();
-                            let text = cur.and_then(|c| self.columns.get(c)).cloned().unwrap_or_else(|| "(ignora)".into());
+                            let text = cur.and_then(|c| self.columns.get(c)).cloned().unwrap_or_else(|| i18n::t("(ignora)").into());
                             egui::ComboBox::from_id_salt(("map", i)).selected_text(text).show_ui(ui, |ui| {
                                 if self.mapping.len() <= i {
                                     self.mapping.resize(i + 1, None);
                                 }
-                                ui.selectable_value(&mut self.mapping[i], None, "(ignora)");
+                                ui.selectable_value(&mut self.mapping[i], None, i18n::t("(ignora)"));
                                 for (k, c) in self.columns.iter().enumerate() {
                                     ui.selectable_value(&mut self.mapping[i], Some(k), c);
                                 }
@@ -653,10 +654,10 @@ impl ImportDialog {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let ready = self.data.is_some() && self.mapping.iter().any(Option::is_some) && !self.running;
-                    if ui.add_enabled(ready, egui::Button::new(RichText::new("Importa").strong())).clicked() {
+                    if ui.add_enabled(ready, egui::Button::new(RichText::new(i18n::t("Importa")).strong())).clicked() {
                         self.start(backend, configs);
                     }
-                    if ui.button("Chiudi").clicked() {
+                    if ui.button(i18n::t("Chiudi")).clicked() {
                         keep = false;
                     }
                 });
@@ -716,14 +717,14 @@ impl ConfirmDialog {
 
     pub fn show(&mut self, ctx: &egui::Context) -> Option<bool> {
         modal(ctx, "confirm-dialog", "Conferma", |ui| {
-            ui.label(&self.text);
+            ui.label(i18n::tr(&self.text).into_owned());
             ui.add_space(10.0);
             let mut out = None;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(RichText::new("Elimina").color(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C)).strong()).clicked() {
+                if ui.button(RichText::new(i18n::t("Elimina")).color(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C)).strong()).clicked() {
                     out = Some(true);
                 }
-                if ui.button("Annulla").clicked() {
+                if ui.button(i18n::t("Annulla")).clicked() {
                     out = Some(false);
                 }
             });

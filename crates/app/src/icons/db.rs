@@ -53,10 +53,14 @@ pub enum Db {
     Explain,
     Keyword,
     Update,
+    /// Favorites: a star.
+    Star,
+    /// "Altri" (other objects): three small shapes.
+    Others,
 }
 
 impl Db {
-    pub const ALL: [Db; 43] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword, Db::Update];
+    pub const ALL: [Db; 45] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword, Db::Update, Db::Star, Db::Others];
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -358,6 +362,30 @@ pub fn paint(p: &Painter, rect: Rect, icon: Db, c: Color32) {
             g.circle(8.0, 8.0, 6.3, Some(blue), None);
             g.line(&[(8.0, 12.0), (8.0, 6.0)], Color32::WHITE, 1.5);
             g.line(&[(5.2, 8.2), (8.0, 5.0), (10.8, 8.2)], Color32::WHITE, 1.5);
+        }
+        Db::Star => {
+            let pts: Vec<(f32, f32)> = (0..10)
+                .map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / 5.0;
+                    let r = if i % 2 == 0 { 6.8 } else { 2.9 };
+                    (8.0 + r * a.cos(), 8.4 + r * a.sin())
+                })
+                .collect();
+            // a star is not convex: a fan of triangles from the centre
+            for i in 0..10 {
+                let (a, b) = (pts[i], pts[(i + 1) % 10]);
+                g.poly(&[(8.0, 8.4), a, b], amber);
+            }
+            let mut ring = pts.clone();
+            ring.push(pts[0]);
+            g.stroke(&ring, amber.gamma_multiply(0.8));
+        }
+        Db::Others => {
+            g.rect(1.5, 1.5, 5.5, 5.5, Some(blue), None);
+            g.circle(11.8, 4.3, 2.9, Some(teal), None);
+            g.poly(&[(4.3, 9.0), (7.4, 14.5), (1.2, 14.5)], orange);
+            g.rect(9.0, 9.0, 5.5, 5.5, Some(purple), None);
+            let _ = c;
         }
         Db::Objects => {
             for (y, col) in [(2.0f32, blue), (6.5, teal), (11.0, purple)] {

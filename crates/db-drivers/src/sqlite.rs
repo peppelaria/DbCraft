@@ -79,8 +79,7 @@ impl Driver for SqliteDriver {
                     "trigger" => ObjectKind::Trigger,
                     _ => ObjectKind::Table,
                 },
-                rows: None,
-                comment: None,
+                ..Default::default()
             })
             .collect())
     }

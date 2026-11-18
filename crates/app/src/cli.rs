@@ -27,6 +27,10 @@ pub struct Cli {
     /// Query editor text, `|` = cursor, trailing `!` = open completion: `"SELECT u.| FROM users u!"`.
     pub editor: Option<String>,
     pub icon_gallery: bool,
+    /// Opens a tool tab: users, backup, automation, model, queries, others:<kind>, menu:<name>.
+    pub open: Option<String>,
+    /// Text in the tree's search box.
+    pub tree_filter: Option<String>,
     started: Option<Instant>,
     shot_requested: bool,
 }
@@ -49,6 +53,8 @@ impl Cli {
                 "--builder" => c.builder = args.next(),
                 "--editor" => c.editor = args.next(),
                 "--icon-gallery" => c.icon_gallery = true,
+                "--open" => c.open = args.next(),
+                "--tree-filter" => c.tree_filter = args.next(),
                 "--table-ui" => c.table_ui = args.next().map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default(),
                 _ if !a.starts_with('-') && c.db.is_none() => c.db = Some(a),
                 _ => {}

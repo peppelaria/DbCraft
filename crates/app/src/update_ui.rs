@@ -10,6 +10,7 @@ use crate::icons::{self, Db, G};
 use crate::selfupdate::{self, Phase, Ready};
 use crate::store::Settings;
 use crate::update::{self, Release};
+use crate::i18n;
 
 enum Event {
     Checked { result: Result<Option<Release>, String>, manual: bool },
@@ -154,9 +155,9 @@ impl Updater {
 
     /// The "Aggiornamenti" menu (toolbar).
     pub fn menu(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new(format!("DbCraft {}", update::current())).strong());
+        ui.label(RichText::new(i18n::tf(format!("DbCraft {}", update::current()))).strong());
         if !update::from_release() {
-            ui.label(RichText::new("Compilato dai sorgenti: aggiorna con git pull").small().weak());
+            ui.label(RichText::new(i18n::t("Compilato dai sorgenti: aggiorna con git pull")).small().weak());
         }
         ui.separator();
         if icons::menu_item(ui, Db::Update, "Cerca aggiornamenti").clicked() {
@@ -170,11 +171,11 @@ impl Updater {
             ui.close();
         }
         ui.separator();
-        let mut changed = ui.checkbox(&mut self.settings.update_check, "Avvisa quando c'è una versione nuova").changed();
+        let mut changed = ui.checkbox(&mut self.settings.update_check, i18n::t("Avvisa quando c'è una versione nuova")).changed();
         changed |= ui
-            .add_enabled(self.settings.update_check, egui::Checkbox::new(&mut self.settings.update_auto, "Installala da sola (si usa dal prossimo avvio)"))
+            .add_enabled(self.settings.update_check, egui::Checkbox::new(&mut self.settings.update_auto, i18n::t("Installala da sola (si usa dal prossimo avvio)")))
             .changed();
-        ui.label(RichText::new("Chiede a GitHub l'ultima release di DbCraft all'avvio;\nconnessioni e impostazioni restano anche aggiornando.").small().weak());
+        ui.label(RichText::new(i18n::t("Chiede a GitHub l'ultima release di DbCraft all'avvio;\nconnessioni e impostazioni restano anche aggiornando.")).small().weak());
         if changed {
             self.settings.save();
             if self.settings.update_check && self.next.is_none() && self.phase.is_none() {
@@ -238,10 +239,10 @@ impl Updater {
                         format!("È disponibile DbCraft {} (questa è la {}).", r.version, update::current())
                     };
                     let color = ui.visuals().text_color();
-                    let lbl = ui.add(egui::Label::new(RichText::new(text).color(color)).truncate());
+                    let lbl = ui.add(egui::Label::new(RichText::new(i18n::tf(text)).color(color)).truncate());
                     match &error {
                         Some(e) => lbl.on_hover_text(e.as_str()),
-                        None => lbl.on_hover_text(keep),
+                        None => lbl.on_hover_text(i18n::t(keep)),
                     };
                     if let Some(Phase::Downloading { done, total }) = &phase
                         && *total > 0
@@ -249,45 +250,45 @@ impl Updater {
                         ui.add(egui::ProgressBar::new(*done as f32 / *total as f32).desired_width(120.0).desired_height(8.0));
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let primary = |ui: &mut egui::Ui, label: &str| ui.add(egui::Button::new(RichText::new(label).color(Color32::WHITE)).fill(accent).small());
+                        let primary = |ui: &mut egui::Ui, label: &str| ui.add(egui::Button::new(RichText::new(i18n::tr(label)).color(Color32::WHITE)).fill(accent).small());
                         if phase.is_some() {
                             return; // while downloading and installing: no buttons
                         }
-                        if crate::app::close_button(ui).on_hover_text("Più tardi (torna al prossimo avvio)").clicked() {
+                        if crate::app::close_button(ui).on_hover_text(i18n::t("Più tardi (torna al prossimo avvio)")).clicked() {
                             self.hidden = true;
                         }
                         if let Some(rd) = &ready {
                             if !rd.on_exit
                                 && primary(ui, "Riavvia ora")
-                                    .on_hover_text("Chiude DbCraft e lo riapre aggiornato (le modifiche non salvate nelle schede vanno perse).")
+                                    .on_hover_text(i18n::t("Chiude DbCraft e lo riapre aggiornato (le modifiche non salvate nelle schede vanno perse)."))
                                     .clicked()
                             {
                                 restart = true;
                             }
                             return;
                         }
-                        if error.is_some() && ui.small_button("Scarica").clicked() {
+                        if error.is_some() && ui.small_button(i18n::t("Scarica")).clicked() {
                             selfupdate::open_url(&r.download);
                         }
-                        if error.is_none() && ui.small_button("Salta questa versione").clicked()
+                        if error.is_none() && ui.small_button(i18n::t("Salta questa versione")).clicked()
                             && let Some(r) = self.update.take()
                         {
                             self.settings.update_skip = r.version;
                             self.settings.save();
                         }
-                        if ui.small_button("Novità").clicked() {
+                        if ui.small_button(i18n::t("Novità")).clicked() {
                             selfupdate::open_url(&r.page);
                         }
                         if can_self {
-                            let label = if error.is_some() { "Riprova" } else { "Aggiorna" };
+                            let label = if error.is_some() { "Riprova" } else { "Aggiorna ora" };
                             if primary(ui, label)
-                                .on_hover_text("Scarica la nuova versione, controlla il file e la installa al posto di questa. Connessioni e impostazioni restano.")
+                                .on_hover_text(i18n::t("Scarica la nuova versione, controlla il file e la installa al posto di questa. Connessioni e impostazioni restano."))
                                 .clicked()
                             {
                                 self.install(ui.ctx());
                             }
                         } else if primary(ui, "Scarica")
-                            .on_hover_text("Scarica la nuova versione dal sito di GitHub: si installa come la prima volta, sostituendo l'app. Connessioni e impostazioni restano.")
+                            .on_hover_text(i18n::t("Scarica la nuova versione dal sito di GitHub: si installa come la prima volta, sostituendo l'app. Connessioni e impostazioni restano."))
                             .clicked()
                         {
                             selfupdate::open_url(&r.download);

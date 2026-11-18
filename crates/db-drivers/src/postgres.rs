@@ -132,10 +132,11 @@ pub(crate) async fn list_schemas(d: &dyn Driver) -> DbResult<Vec<String>> {
 pub(crate) async fn list_objects(d: &dyn Driver, schema: Option<&str>) -> DbResult<Vec<SchemaObject>> {
     let s = Dialect::Postgres.string_literal(schema.unwrap_or("public"));
     let sql = format!(
-        "SELECT c.relname, CASE WHEN c.relkind IN ('v','m') THEN 'V' ELSE 'T' END, c.reltuples::bigint, obj_description(c.oid, 'pg_class') \
+        "SELECT c.relname, CASE WHEN c.relkind IN ('v','m') THEN 'V' ELSE 'T' END, c.reltuples::bigint, obj_description(c.oid, 'pg_class'), \
+           CASE WHEN c.relkind IN ('r','p','m') THEN pg_relation_size(c.oid) END \
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = {s} AND c.relkind IN ('r','p','v','m','f') \
-         UNION ALL SELECT p.proname, CASE WHEN p.prokind = 'p' THEN 'P' ELSE 'F' END, NULL::bigint, NULL::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = {s} \
-         UNION ALL SELECT DISTINCT trigger_name::text, 'R', NULL::bigint, NULL::text FROM information_schema.triggers WHERE trigger_schema = {s} ORDER BY 1"
+         UNION ALL SELECT p.proname, CASE WHEN p.prokind = 'p' THEN 'P' ELSE 'F' END, NULL::bigint, NULL::text, NULL::bigint FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = {s} \
+         UNION ALL SELECT DISTINCT trigger_name::text, 'R', NULL::bigint, NULL::text, NULL::bigint FROM information_schema.triggers WHERE trigger_schema = {s} ORDER BY 1"
     );
     let rs = q(d, &sql).await?;
     Ok((0..rs.rows.len())
@@ -150,6 +151,8 @@ pub(crate) async fn list_objects(d: &dyn Driver, schema: Option<&str>) -> DbResu
             },
             rows: rs.rows.get(r).and_then(|x| x.get(2)).and_then(Value::as_i64).filter(|n| *n >= 0),
             comment: opt_text(&rs, r, 3),
+            data_length: rs.rows.get(r).and_then(|x| x.get(4)).and_then(Value::as_i64),
+            ..Default::default()
         })
         .collect())
 }

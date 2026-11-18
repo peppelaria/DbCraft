@@ -111,7 +111,10 @@ impl Driver for MssqlDriver {
         let s = Dialect::SqlServer.string_literal(schema.unwrap_or("dbo"));
         let rs = self
             .q(&format!(
-                "SELECT o.name, RTRIM(o.type), (SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = o.object_id AND p.index_id IN (0,1)) \
+                "SELECT o.name, RTRIM(o.type), (SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = o.object_id AND p.index_id IN (0,1)), \
+                 CONVERT(varchar(19), o.modify_date, 120), \
+                 (SELECT SUM(a.used_pages) * 8192 FROM sys.partitions p JOIN sys.allocation_units a ON a.container_id = p.partition_id WHERE p.object_id = o.object_id), \
+                 (SELECT CAST(IDENT_CURRENT(QUOTENAME(s.name) + '.' + QUOTENAME(o.name)) AS bigint) WHERE o.type = 'U') \
                  FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id \
                  WHERE s.name = {s} AND o.type IN ('U','V','P','FN','IF','TF','TR') AND o.is_ms_shipped = 0 ORDER BY o.name"
             ))
@@ -127,7 +130,10 @@ impl Driver for MssqlDriver {
                     _ => ObjectKind::Table,
                 },
                 rows: rs.rows.get(r).and_then(|x| x.get(2)).and_then(Value::as_i64),
-                comment: None,
+                modified: opt_text(&rs, r, 3),
+                data_length: rs.rows.get(r).and_then(|x| x.get(4)).and_then(Value::as_i64),
+                auto_increment: rs.rows.get(r).and_then(|x| x.get(5)).and_then(Value::as_i64),
+                ..Default::default()
             })
             .collect())
     }

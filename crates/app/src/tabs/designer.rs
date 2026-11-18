@@ -7,6 +7,7 @@ use egui::RichText;
 
 use crate::app::{Action, Env, Location, ObjRef};
 use crate::backend::{Msg, TabId};
+use crate::i18n;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Sub {
@@ -203,20 +204,20 @@ impl DesignerTab {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Nome tabella:");
+            ui.label(i18n::t("Nome tabella:"));
             ui.add(egui::TextEdit::singleline(&mut self.design.name).desired_width(240.0));
             if let Some(s) = &self.loc.schema {
-                ui.label(RichText::new(format!("schema: {s}")).weak());
+                ui.label(RichText::new(i18n::tf(format!("schema: {s}"))).weak());
             }
         });
         if let Some(e) = &self.error {
             ui.colored_label(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C), e);
         }
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.sub, Sub::Fields, "Campi");
-            ui.selectable_value(&mut self.sub, Sub::Indexes, "Indici");
-            ui.selectable_value(&mut self.sub, Sub::ForeignKeys, "Chiavi esterne");
-            ui.selectable_value(&mut self.sub, Sub::Sql, "Anteprima SQL");
+            ui.selectable_value(&mut self.sub, Sub::Fields, i18n::t("Campi"));
+            ui.selectable_value(&mut self.sub, Sub::Indexes, i18n::t("Indici"));
+            ui.selectable_value(&mut self.sub, Sub::ForeignKeys, i18n::t("Chiavi esterne"));
+            ui.selectable_value(&mut self.sub, Sub::Sql, i18n::t("Anteprima SQL"));
         });
         ui.separator();
         match self.sub {
@@ -242,7 +243,7 @@ impl DesignerTab {
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             egui::Grid::new(("fields", self.id)).striped(true).num_columns(8).spacing([8.0, 4.0]).show(ui, |ui| {
                 for h in ["", "Nome", "Tipo", "Non null", "Chiave", "Auto inc.", "Predefinito", "Commento"] {
-                    ui.strong(h);
+                    ui.strong(i18n::t(h));
                 }
                 ui.end_row();
                 for (i, c) in self.design.columns.iter_mut().enumerate() {
@@ -271,7 +272,7 @@ impl DesignerTab {
                         }
                     });
                     ui.checkbox(&mut c.auto_increment, "");
-                    ui.add(egui::TextEdit::singleline(&mut c.default).desired_width(120.0).hint_text("es. 0, 'abc', CURRENT_TIMESTAMP"));
+                    ui.add(egui::TextEdit::singleline(&mut c.default).desired_width(120.0).hint_text(i18n::t("es. 0, 'abc', CURRENT_TIMESTAMP")));
                     ui.add_enabled(self.dialect != Dialect::Sqlite && self.dialect != Dialect::SqlServer, egui::TextEdit::singleline(&mut c.comment).desired_width(180.0));
                     ui.end_row();
                 }
@@ -284,7 +285,7 @@ impl DesignerTab {
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             egui::Grid::new(("idx", self.id)).striped(true).num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
                 for h in ["Nome", "Campi (separati da virgola)", "Unico", ""] {
-                    ui.strong(h);
+                    ui.strong(i18n::t(h));
                 }
                 ui.end_row();
                 for (i, x) in self.design.indexes.iter_mut().enumerate() {
@@ -308,7 +309,7 @@ impl DesignerTab {
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             egui::Grid::new(("fk", self.id)).striped(true).num_columns(7).spacing([8.0, 4.0]).show(ui, |ui| {
                 for h in ["Nome", "Campi", "Tabella di riferimento", "Campi di riferimento", "Su eliminazione", "Su aggiornamento", ""] {
-                    ui.strong(h);
+                    ui.strong(i18n::t(h));
                 }
                 ui.end_row();
                 for (i, f) in self.design.foreign_keys.iter_mut().enumerate() {
@@ -319,7 +320,7 @@ impl DesignerTab {
                     for (k, slot) in [&mut f.on_delete, &mut f.on_update].into_iter().enumerate() {
                         egui::ComboBox::from_id_salt(("fka", self.id, i, k)).selected_text(slot.as_str()).show_ui(ui, |ui| {
                             for a in FK_ACTIONS {
-                                ui.selectable_value(slot, a.to_string(), if a.is_empty() { "(predefinito)" } else { a });
+                                ui.selectable_value(slot, a.to_string(), if a.is_empty() { i18n::t("(predefinito)") } else { a });
                             }
                         });
                     }

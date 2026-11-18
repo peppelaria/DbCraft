@@ -138,9 +138,10 @@ pub(crate) async fn list_schemas(_d: &dyn Driver) -> DbResult<Vec<String>> {
 }
 
 pub(crate) async fn list_objects(d: &dyn Driver, _schema: Option<&str>) -> DbResult<Vec<SchemaObject>> {
-    let rs = q(d, "SELECT TABLE_NAME, IF(TABLE_TYPE = 'VIEW', 'V', 'T'), TABLE_ROWS, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() \
-            UNION ALL SELECT ROUTINE_NAME, IF(ROUTINE_TYPE = 'PROCEDURE', 'P', 'F'), NULL, ROUTINE_COMMENT FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() \
-            UNION ALL SELECT TRIGGER_NAME, 'R', NULL, NULL FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY 1")
+    let rs = q(d, "SELECT TABLE_NAME, IF(TABLE_TYPE = 'VIEW', 'V', 'T'), TABLE_ROWS, TABLE_COMMENT, AUTO_INCREMENT, \
+              CAST(COALESCE(UPDATE_TIME, CREATE_TIME) AS CHAR), DATA_LENGTH, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() \
+            UNION ALL SELECT ROUTINE_NAME, IF(ROUTINE_TYPE = 'PROCEDURE', 'P', 'F'), NULL, ROUTINE_COMMENT, NULL, CAST(LAST_ALTERED AS CHAR), NULL, NULL FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() \
+            UNION ALL SELECT TRIGGER_NAME, 'R', NULL, NULL, NULL, CAST(CREATED AS CHAR), NULL, NULL FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY 1")
         .await?;
     Ok((0..rs.rows.len())
         .map(|r| SchemaObject {
@@ -153,7 +154,11 @@ pub(crate) async fn list_objects(d: &dyn Driver, _schema: Option<&str>) -> DbRes
                 _ => ObjectKind::Table,
             },
             rows: rs.rows.get(r).and_then(|x| x.get(2)).and_then(Value::as_i64),
-            comment: opt_text(&rs, r, 3).filter(|c| !c.is_empty()),
+            comment: opt_text(&rs, r, 3).filter(|c| !c.is_empty() && c != "VIEW"),
+            auto_increment: rs.rows.get(r).and_then(|x| x.get(4)).and_then(Value::as_i64),
+            modified: opt_text(&rs, r, 5),
+            data_length: rs.rows.get(r).and_then(|x| x.get(6)).and_then(Value::as_i64),
+            engine: opt_text(&rs, r, 7),
         })
         .collect())
 }

@@ -10,9 +10,9 @@ DbCraft porta in un'app nativa e leggera il flusso di lavoro dei client database
 dati in stile foglio di calcolo che resta fluida anche su tabelle grandi, editor SQL, designer
 visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Server e SQLite**.
 
-🇬🇧 [Read in English](README.md)
+*[English](README.md) · Italiano · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
-![Visualizzatore tabelle](docs/screenshots/table-viewer.png)
+![DbCraft: gli oggetti di un database MySQL, con la barra dei menu, la toolbar e l'albero delle connessioni](docs/screenshots/objects.png)
 
 > **Stato: sviluppo iniziale (v0.1).** Tutti i motori superano la stessa suite di test
 > end-to-end su server reali: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 e SQLite.
@@ -25,8 +25,14 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 | Area | Cosa offre |
 |---|---|
 | **Connessioni** | MySQL, MariaDB, PostgreSQL, SQL Server, SQLite. Connessioni salvate, prova connessione, **SSL/TLS** (verifica del server con CA e nome host, autenticazione con certificato client), **tunnel SSH** con autenticazione tramite password o chiave privata (con o senza passphrase; la chiave dell'host è verificata con `~/.ssh/known_hosts`) e **tunnel HTTP** tramite lo script PHP di DbCraft, per i database raggiungibili solo da un web server ([tunnel/README.md](tunnel/README.md)). Le password stanno nel portachiavi del sistema operativo (Portachiavi di macOS, Gestione credenziali di Windows, Secret Service su Linux), mai in chiaro. |
-| **Albero oggetti** | Connessione → Database → Schema → Tabelle / Viste / Funzioni / Procedure / Trigger, caricati su richiesta, con menu contestuali. |
-| **Vista Oggetti** | Elenco ricercabile degli oggetti del database o schema selezionato, con numero di righe e commenti. |
+| **Albero oggetti** | Connessione → Database → Schema → Tabelle / Viste / Funzioni / Procedure / Trigger, caricati su richiesta, con menu contestuali. In fondo: **Cerca** (filtra l'albero mentre scrivi), **★ solo preferiti** e **Comprimi tutto**. |
+| **Barra dei menu** | File, Modifica, Visualizza, **Preferiti**, Strumenti, Finestra, Aiuto. Qualsiasi oggetto si aggiunge ai preferiti (clic destro › *Aggiungi ai preferiti*); il menu Preferiti lo apre, collegandosi prima se serve. |
+| **Vista Oggetti** | Elenco ricercabile degli oggetti del database o schema selezionato, come in Navicat: nome, auto increment, data modifica, dimensione dati, engine, righe e commento (le colonne che il server fornisce). **Tabella / Vista / Funzione / Altri ▾** della toolbar cambiano il tipo di oggetto: *Altri* mostra i trigger e, secondo il server, indici, sequenze, eventi, tipi, estensioni e sinonimi. |
+| **Query salvate** | **Query** nella toolbar elenca le query salvate per il database (⌘/Ctrl + S in una scheda Query le salva lì): apri, nuova, elimina. |
+| **Utenti** | Utenti e ruoli del server con i loro privilegi; **nuovo utente**, **cambia password**, **concedi / revoca** privilegi su un database o schema, **elimina utente**. L'SQL si vede prima di eseguirlo (con la password nascosta). |
+| **Backup / ripristino** | Un backup è uno script SQL con struttura e dati di tutte le tabelle (nell'ordine delle chiavi esterne) e le viste; la scheda **Backup** li elenca, ne ripristina uno (o qualsiasi file `.sql`) e li elimina. Andata e ritorno verificati su tutti e cinque i motori. |
+| **Automazione** | Attività pianificate: un backup o del codice SQL, ogni *n* minuti, ogni giorno o ogni settimana a un'ora scelta, con prossima/ultima esecuzione ed esito, e **Esegui ora**. Le attività girano mentre DbCraft è aperto. |
+| **Modello** | Il diagramma ER di un database o schema: un riquadro per tabella con le sue colonne (chiavi primarie ed esterne segnate) e una linea per chiave esterna. Riquadri trascinabili, scorrimento, zoom, **Disponi**, **Esporta SQL**; doppio clic su una tabella per progettarla. |
 | **Visualizzatore / editor tabelle** | Griglia virtualizzata (disegna solo le celle visibili), paginazione lato server (da 100 a 50.000 righe per pagina). Pannello **Filtro e ordinamento**: le condizioni si leggono come frasi di elementi cliccabili (campo · operatore · valore), ognuna collegata alla successiva dal proprio *and*/*or*, con gruppi tra parentesi annidabili e 21 operatori (=, !=, <…, contiene, inizia/finisce con e le loro negazioni, è NULL/vuoto, compreso tra, nell'elenco, SQL personalizzato), oppure `WHERE` libero; e ordinamento su più colonne. Mostra/nascondi colonne. **Viste Griglia, Modulo e Testo**. **Editor cella** laterale per testi lunghi, JSON (formattazione) e dati binari (dump esadecimale). **Selettore data/ora** sulle colonne date, time e datetime/timestamp (pulsante calendario sulla cella attiva o Alt+↓, anche nella vista Modulo e nell'Editor cella), che conserva frazioni di secondo e fuso orario. Modifica nella cella, imposta NULL, aggiungi ed elimina record (l'eliminazione chiede conferma). In auto-commit un record viene salvato quando lo lasci; **Inizia transazione** tiene tutte le modifiche in sospeso fino a **Commit** o **Rollback**. |
 | **Griglia dati** | Intestazioni con tipo e indicatore di chiave primaria, numeri di riga con indicatore del record corrente, NULL in grigio, ridimensionamento colonne (doppio clic per adattare), colonne bloccate, selezione multipla, navigazione da tastiera, copia in formato TSV (con o senza intestazioni). |
 | **Editor SQL** | Evidenziazione della sintassi; **completamento del codice** (parole chiave, tabelle, viste, funzioni e colonne, anche dopo un alias `u.`; Ctrl+Spazio); scelta di connessione, database e schema dalla barra; *Esegui* tutto (⌘/Ctrl + Invio), la selezione o l'istruzione al cursore (⌘/Ctrl + Maiusc + Invio); **Stop** (annulla la query anche sul server con PostgreSQL e MySQL/MariaDB); **Explain** (piano di esecuzione; SHOWPLAN su SQL Server); **Abbellisci SQL** (⌘/Ctrl + Maiusc + F); **Snippet** di istruzioni pronte; un tab di risultato per istruzione, log dei messaggi, Ln/Col nella barra di stato, apertura e salvataggio di file `.sql`. |
@@ -34,11 +40,19 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 | **Designer tabelle** | Campi (nome, tipo, non null, chiave, auto-incremento, predefinito, commento), indici e chiavi esterne, con **anteprima SQL** in tempo reale delle istruzioni `CREATE TABLE` / `ALTER TABLE` nel dialetto della connessione. Su SQLite, le modifiche non esprimibili con `ALTER` vengono applicate ricostruendo la tabella, senza perdere i dati. |
 | **Esportazione** | Tabelle, viste o risultati di query in CSV, JSON, script SQL `INSERT` o Excel (`.xlsx`). |
 | **Importazione** | CSV con delimitatore e riga di intestazione configurabili, anteprima e associazione dei campi, opzione "cella vuota = NULL". Le righe vengono inserite a blocchi dentro transazioni. |
-| **Interfaccia** | Tema chiaro e scuro. L'interfaccia per ora è in italiano. |
+| **Lingue** | L'interfaccia parla **English, Italiano, Español, Français, Deutsch, Українська, 中文, 日本語 e 한국어**: quella del sistema, oppure quella scelta in **Visualizza › Lingua** (vale subito). Cinese, giapponese e coreano usano un carattere del sistema. |
+| **Interfaccia** | Tema chiaro e scuro. |
 
-| Oggetti | Editor SQL (tema scuro) |
+| Visualizzatore tabelle | Editor SQL (tema scuro) |
 |---|---|
-| ![Oggetti](docs/screenshots/objects.png) | ![Editor SQL](docs/screenshots/query-editor-dark.png) |
+| ![Visualizzatore tabelle con il pannello Filtro e ordinamento](docs/screenshots/table-viewer.png) | ![Editor SQL con il completamento del codice, tema scuro](docs/screenshots/query-editor-dark.png) |
+| **Modello (diagramma ER)** | **Utenti e privilegi** |
+| ![Diagramma ER di un database](docs/screenshots/model.png) | ![Utenti di un server MySQL con i loro privilegi](docs/screenshots/users.png) |
+| **Backup** | **Automazione** |
+| ![Backup di un database](docs/screenshots/backup.png) | ![Attività pianificate di backup e query](docs/screenshots/automation.png) |
+
+Gli screenshot mostrano l'interfaccia in inglese; in italiano si sceglie da **View › Language** (o
+è già così se il sistema è in italiano).
 
 ## Per iniziare
 
@@ -58,7 +72,7 @@ I pacchetti già compilati sono nella pagina [Releases](https://github.com/rmpao
 #### Aggiornamenti
 
 Una release installata chiede a GitHub, all'avvio e ogni 12 ore, se c'è una versione più nuova.
-Se c'è, una barra sotto la toolbar propone **Aggiorna** (scarica, controlla l'impronta SHA-256 con
+Se c'è, una barra sotto la toolbar propone **Aggiorna ora** (scarica, controlla l'impronta SHA-256 con
 `SHA256SUMS.txt`, installa al posto di questa copia, poi **Riavvia ora**), **Novità** (note della
 release) e **Salta questa versione**. Su macOS l'app viene sostituita sul posto (la precedente
 resta nella cartella di configurazione, in `updates/`); su Linux la cartella del `.tar.gz` riceve i
@@ -99,12 +113,15 @@ Per creare una connessione, clicca **Connessione** nella barra in alto e scegli 
 | `--open-table <nome>` | Apre una tabella di quel file appena è caricata |
 | `--query "<sql>"` | Apre un tab query con questo SQL e lo esegue |
 | `--dark` | Avvia con il tema scuro |
+| `--lang <codice>` | Lingua dell'interfaccia per questo avvio: `it`, `en`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
+| `--open <strumento>` | Apre uno strumento quando il database è caricato: `users`, `backup`, `automation`, `model`, `queries`, `others:<tipo>` |
 | `--new-connection <tipo> [--ssh-tab]` | Apre il dialogo di nuova connessione (`mysql`, `postgres`, …), eventualmente sulla scheda SSH |
 | `--screenshot <out.png> [--delay <s>]` | Salva un PNG della finestra dopo `s` secondi (predefinito 3), poi esce. Serve per le verifiche automatiche dell'interfaccia. |
 
 Le connessioni salvate stanno nella cartella di configurazione del sistema
-(`dbcraft/connections.json`), per esempio `~/Library/Application Support/dbcraft/` su macOS.
-Imposta `DBCRAFT_CONFIG_DIR` per usare un'altra cartella.
+(`dbcraft/connections.json`), per esempio `~/Library/Application Support/dbcraft/` su macOS,
+insieme a `settings.json`, `favorites.json`, `automation.json` e alle cartelle `queries/` e
+`backups/`. Imposta `DBCRAFT_CONFIG_DIR` per usare un'altra cartella.
 
 ### Test
 
@@ -119,6 +136,7 @@ Test di integrazione dei driver su server reali (Docker):
 scripts/test-certs.sh && mkdir -p target/ssh-test   # certificati di test, cartella chiavi SSH
 docker compose -f docker-compose.test.yml up -d --wait
 DBCRAFT_TEST_SERVERS=1 cargo test -p db-drivers --test servers --test ssh --test tls --test http -- --test-threads=1
+DBCRAFT_TEST_SERVERS=1 cargo test -p dbcraft -- --test-threads=1   # backup/ripristino, utenti e cataloghi
 docker compose -f docker-compose.test.yml down -v
 ```
 
@@ -169,6 +187,11 @@ crates/
 └── app          L'applicazione desktop `dbcraft` (eframe)
 ```
 
+- Le **traduzioni** funzionano come in OpenSlate: il testo italiano nel codice è la chiave e
+  `crates/app/src/i18n/<lingua>.json` lo dà nelle altre lingue (i segnaposto come `{n}` o `{}`
+  traducono anche i testi composti durante l'esecuzione). Con `DBCRAFT_I18N_MISSING=mancanti.txt`
+  i testi mostrati senza traduzione finiscono in quel file.
+
 - L'interfaccia non si blocca mai: le operazioni sul database girano su un runtime **tokio** in
   background, e i risultati tornano tramite un canale che richiede il ridisegno.
 - La griglia non sa nulla di database. Legge i dati attraverso il piccolo trait `GridModel` e
@@ -181,14 +204,15 @@ crates/
 ## Roadmap
 
 - [x] Test di integrazione su PostgreSQL, MySQL/MariaDB e SQL Server (Docker)
-- [ ] Autocompletamento SQL (parole chiave, tabelle, colonne)
-- [ ] Interruzione di una query in esecuzione
+- [x] Autocompletamento SQL (parole chiave, tabelle, colonne)
+- [x] Interruzione di una query in esecuzione
 - [x] Tunnel SSH (password, chiave privata con passphrase facoltativa)
 - [x] Opzioni SSL (verifica CA e nome host, certificati client)
 - [x] Tunnel HTTP (script PHP di DbCraft, MySQL/MariaDB e PostgreSQL)
-- [ ] Set di icone vettoriali proprio
-- [ ] Interfaccia in inglese / localizzazione
-- [ ] Diagramma ER, sincronizzazione di dati e struttura, backup/ripristino
+- [x] Set di icone vettoriali proprio
+- [x] Interfaccia in nove lingue
+- [x] Diagramma ER, backup/ripristino, attività pianificate, utenti e privilegi
+- [ ] Sincronizzazione di dati e struttura, BI
 - [ ] Altri motori (Oracle, MongoDB, Redis)
 
 Issue e pull request sono benvenute.
@@ -218,6 +242,10 @@ DbCraft si basa sul lavoro di molti progetti open source. Grazie!
 - **[keyring](https://github.com/hwchen/keyring-rs)**, **[rfd](https://github.com/PolyMeilex/rfd)**,
   **[dirs](https://github.com/soc/dirs-rs)**: portachiavi di sistema, finestre di dialogo native
   per i file e cartelle di configurazione.
+- **[sys-locale](https://github.com/1Password/sys-locale)**: la lingua del sistema.
+- **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1): un ritaglio minuscolo per
+  i nomi delle lingue 中文 日本語 한국어 nel menu, come in OpenSlate.
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: il sistema delle traduzioni e l'aggiornamento automatico.
 
 L'elenco completo dei componenti di terze parti e delle loro licenze è in [CREDITS.md](CREDITS.md).
 

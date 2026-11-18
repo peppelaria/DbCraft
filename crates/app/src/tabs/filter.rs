@@ -5,6 +5,7 @@
 use db_core::Dialect;
 use dbgrid::{ColumnKind, GridColumn};
 use egui::{Color32, RichText, Sense};
+use crate::i18n;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
@@ -277,7 +278,7 @@ const FIELD: Color32 = Color32::from_rgb(0x1F, 0x6F, 0xD0);
 const VALUE: Color32 = Color32::from_rgb(0x3B, 0x4E, 0xC8);
 
 fn token(ui: &mut egui::Ui, text: &str, color: Color32) -> egui::Response {
-    ui.add(egui::Label::new(RichText::new(text).color(color)).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand)
+    ui.add(egui::Label::new(RichText::new(i18n::tr(text)).color(color)).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 impl FilterSort {
@@ -354,15 +355,15 @@ impl FilterSort {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.strong("Filtro");
+                ui.strong(i18n::t("Filtro"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.toggle_value(&mut self.raw_mode, "SQL").on_hover_text("Scrivi il WHERE a mano");
+                    ui.toggle_value(&mut self.raw_mode, i18n::t("SQL")).on_hover_text(i18n::t("Scrivi il WHERE a mano"));
                 });
             });
             if self.raw_mode {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("WHERE").monospace());
-                    let r = ui.add(egui::TextEdit::singleline(&mut self.raw).desired_width(ui.available_width() - 10.0).font(egui::TextStyle::Monospace).hint_text("es. id > 10 AND nome LIKE 'A%'"));
+                    ui.label(RichText::new(i18n::t("WHERE")).monospace());
+                    let r = ui.add(egui::TextEdit::singleline(&mut self.raw).desired_width(ui.available_width() - 10.0).font(egui::TextStyle::Monospace).hint_text(i18n::t("es. id > 10 AND nome LIKE 'A%'")));
                     apply |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 });
             } else {
@@ -385,7 +386,7 @@ impl FilterSort {
             ui.add_space(4.0);
             ui.separator();
             ui.horizontal_wrapped(|ui| {
-                ui.strong("Ordina per");
+                ui.strong(i18n::t("Ordina per"));
                 ui.add_space(8.0);
                 let mut remove = None;
                 let n = self.sorts.len();
@@ -400,10 +401,10 @@ impl FilterSort {
                             }
                         });
                     });
-                    if token(ui, if s.desc { "DESC" } else { "ASC" }, Color32::DARK_GRAY).on_hover_text("Clic per invertire").clicked() {
+                    if token(ui, if s.desc { "DESC" } else { "ASC" }, Color32::DARK_GRAY).on_hover_text(i18n::t("Clic per invertire")).clicked() {
                         s.desc = !s.desc;
                     }
-                    if ui.small_button("×").on_hover_text("Rimuovi").clicked() {
+                    if ui.small_button("×").on_hover_text(i18n::t("Rimuovi")).clicked() {
                         remove = Some(i);
                     }
                     if i + 1 < n {
@@ -417,7 +418,7 @@ impl FilterSort {
                     if token(ui, "<clicca qui per aggiungere un ordinamento>", Color32::GRAY).clicked() {
                         self.sorts.push(Sort { col: first.clone(), desc: false });
                     }
-                } else if ui.small_button("+").on_hover_text("Aggiungi ordinamento").clicked() {
+                } else if ui.small_button("+").on_hover_text(i18n::t("Aggiungi ordinamento")).clicked() {
                     self.sorts.push(Sort { col: first.clone(), desc: false });
                 }
             });
@@ -426,16 +427,16 @@ impl FilterSort {
                 return;
             }
             ui.horizontal(|ui| {
-                let btn = egui::Button::new(RichText::new("Applica filtro e ordinamento").color(Color32::WHITE).strong()).fill(LINK);
+                let btn = egui::Button::new(RichText::new(i18n::t("Applica filtro e ordinamento")).color(Color32::WHITE).strong()).fill(LINK);
                 if ui.add(btn).clicked() {
                     apply = true;
                 }
-                if ui.button("Azzera").clicked() {
+                if ui.button(i18n::t("Azzera")).clicked() {
                     *self = FilterSort { raw_mode: self.raw_mode, qualified: self.qualified, ..Default::default() };
                     apply = true;
                 }
                 if let Some(w) = self.where_sql(d, columns) {
-                    ui.label(RichText::new(format!("WHERE {w}")).monospace().small().weak());
+                    ui.label(RichText::new(i18n::tf(format!("WHERE {w}"))).monospace().small().weak());
                 }
             });
         });
@@ -463,13 +464,13 @@ impl FilterSort {
                 }
                 if selected {
                     ui.add_space(12.0);
-                    if matches!(item.node, Node::Group(_)) && ui.small_button("+").on_hover_text("Aggiungi una condizione nel gruppo").clicked() {
+                    if matches!(item.node, Node::Group(_)) && ui.small_button("+").on_hover_text(i18n::t("Aggiungi una condizione nel gruppo")).clicked() {
                         acts.push(Act::AddInside(path.clone()));
                     }
-                    if ui.small_button("|+").on_hover_text("Aggiungi una condizione dopo questa").clicked() {
+                    if ui.small_button("|+").on_hover_text(i18n::t("Aggiungi una condizione dopo questa")).clicked() {
                         acts.push(Act::AddCond(path.clone()));
                     }
-                    if ui.small_button("()+").on_hover_text("Aggiungi un gruppo tra parentesi").clicked() {
+                    if ui.small_button("()+").on_hover_text(i18n::t("Aggiungi un gruppo tra parentesi")).clicked() {
                         acts.push(Act::AddGroup(path.clone()));
                     }
                     if crate::icons::small(ui, crate::icons::G::Delete, "Elimina", true).clicked() {
@@ -514,10 +515,10 @@ impl FilterSort {
                 });
             });
         }
-        let r = token(ui, c.op.label(), Color32::DARK_GRAY);
+        let r = token(ui, i18n::t(c.op.label()), Color32::DARK_GRAY);
         egui::Popup::menu(&r).show(|ui| {
             for op in Op::ALL {
-                if ui.selectable_label(c.op == op, op.label()).clicked() {
+                if ui.selectable_label(c.op == op, i18n::t(op.label())).clicked() {
                     c.op = op;
                 }
             }
@@ -525,16 +526,16 @@ impl FilterSort {
         let n = c.op.values();
         for k in 0..n {
             if k == 1 {
-                ui.label("e");
+                ui.label(i18n::t("e"));
             }
             let editing = self.editing.as_ref().is_some_and(|(p, kk)| p == path && *kk == k);
             let slot = if k == 0 { &mut c.value } else { &mut c.value2 };
             if editing {
                 let width = if c.op == Op::Custom { 360.0 } else { 160.0 };
                 let r = ui.add(egui::TextEdit::singleline(slot).desired_width(width).hint_text(match c.op {
-                    Op::In | Op::NotIn => "a, b, c",
-                    Op::Custom => "es. LENGTH(nome) > 3",
-                    _ => "valore",
+                    Op::In | Op::NotIn => i18n::t("a, b, c"),
+                    Op::Custom => i18n::t("es. LENGTH(nome) > 3"),
+                    _ => i18n::t("valore"),
                 }));
                 if !r.has_focus() && !r.lost_focus() {
                     r.request_focus();
@@ -545,7 +546,7 @@ impl FilterSort {
                 }
             } else {
                 let shown = if slot.is_empty() { "<?>".to_string() } else if c.op == Op::Custom { slot.clone() } else { format!("'{slot}'") };
-                if token(ui, &shown, VALUE).on_hover_text("Clic per modificare").clicked() {
+                if token(ui, &shown, VALUE).on_hover_text(i18n::t("Clic per modificare")).clicked() {
                     acts.push(Act::Edit(path.to_vec(), k));
                     acts.push(Act::Select(path.to_vec()));
                 }
@@ -556,7 +557,7 @@ impl FilterSort {
 
 fn join_token(ui: &mut egui::Ui, join: &mut Join) {
     let text = if *join == Join::And { "and" } else { "or" };
-    if token(ui, text, Color32::from_rgb(0xC2, 0x5E, 0x00)).on_hover_text("Clic per alternare and/or").clicked() {
+    if token(ui, text, Color32::from_rgb(0xC2, 0x5E, 0x00)).on_hover_text(i18n::t("Clic per alternare and/or")).clicked() {
         *join = if *join == Join::And { Join::Or } else { Join::And };
     }
 }

@@ -32,6 +32,14 @@ The adaptations remove the coupling to GridCraft's workbook engine and replace i
 [`crates/dbgrid/LICENSE-GRIDCRAFT-MIT`](crates/dbgrid/LICENSE-GRIDCRAFT-MIT), and provenance is
 recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 
+### OpenSlate
+
+- Project: <https://github.com/rmpaolillo/OpenSlate> (same author)
+- Used in: `crates/app/src/i18n.rs` (the translation system: Italian text as the key, JSON
+  tables per language, placeholders that translate composed texts), `crates/app/src/fonts.rs`
+  (system fonts for Chinese, Japanese and Korean), and the self-update
+  (`update.rs`, `selfupdate.rs`, `update_ui.rs`).
+
 ## Direct dependencies
 
 | Crate | Purpose | License |
@@ -56,6 +64,8 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 | [keyring](https://github.com/hwchen/keyring-rs) | OS keychain for passwords | MIT OR Apache-2.0 |
 | [rfd](https://github.com/PolyMeilex/rfd) | Native file dialogs | MIT |
 | [dirs](https://github.com/soc/dirs-rs) | OS configuration directories | MIT OR Apache-2.0 |
+| [sys-locale](https://github.com/1Password/sys-locale) | The system language (interface language) | MIT OR Apache-2.0 |
+| [ureq](https://github.com/algesten/ureq), [sha2](https://github.com/RustCrypto/hashes) | Self-update: GitHub releases and SHA-256 checks | MIT OR Apache-2.0 |
 
 ## Bundled and notable transitive components
 
@@ -65,6 +75,7 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 | [syntect](https://github.com/trishume/syntect) | SQL highlighting through `egui_extras` | MIT |
 | [rustls](https://github.com/rustls/rustls), [ring](https://github.com/briansmith/ring), [aws-lc-rs](https://github.com/aws/aws-lc-rs) | TLS for database connections | Apache-2.0 / ISC / MIT (see each crate) |
 | Fonts bundled by egui through `epaint_default_fonts` (Ubuntu-Light, Hack, Noto Emoji, emoji-icon-font, egui-icons) | UI text and icons | Ubuntu Font Licence 1.0, OFL-1.1, MIT, Bitstream Vera (see `epaint_default_fonts`) |
+| [Noto Sans CJK](https://github.com/notofonts/noto-cjk) (a 3 KB subset: the glyphs of 中文 日本語 한국어) | Language names in the View › Language menu, `crates/app/assets/fonts/NotoSansCJK-langnames.otf`, taken from OpenSlate | SIL OFL 1.1 ([`OFL-NotoSansCJK.txt`](crates/app/assets/fonts/OFL-NotoSansCJK.txt)) |
 | [option-ext](https://crates.io/crates/option-ext) | Dependency of `dirs`; used unmodified | MPL-2.0 |
 
 The full dependency tree has about 600 crates. Nearly all are under MIT, Apache-2.0, or both;

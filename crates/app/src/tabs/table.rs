@@ -15,6 +15,7 @@ use crate::backend::{Msg, TabId};
 use crate::dialogs::ExportSource;
 use crate::models::{Edits, TableModel, grid_columns};
 use crate::tabs::filter::{FilterSort, Item, Join, Node, Op, Sort};
+use crate::i18n;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
@@ -204,7 +205,7 @@ impl TableTab {
                             let mut first = Item::cond(a.name, Op::Contains, "1");
                             first.join = Join::Or;
                             self.fs.push(first);
-                            let group = vec![Item::cond("city", Op::Eq, "Milano"), Item::cond("credit", Op::Gt, "400")];
+                            let group = vec![Item::cond("city", Op::Eq, "Milan"), Item::cond("credit", Op::Gt, "400")];
                             self.fs.push(Item { enabled: true, join: Join::And, node: Node::Group(group) });
                             self.fs.select(vec![0]);
                             self.fs.sorts.push(Sort { col: b.name, desc: true });
@@ -409,12 +410,14 @@ impl TableTab {
     pub fn status_text(&self) -> String {
         let n = self.data.rows.len() as u64;
         let first = if n == 0 { 0 } else { self.page * self.page_size + 1 };
-        let mut s = format!("{}   —   Record {}–{}", self.last_sql, first, self.page * self.page_size + n);
-        if let Some(t) = self.total {
-            s.push_str(&format!(" di {t}"));
-        }
+        let last = self.page * self.page_size + n;
+        let range = match self.total {
+            Some(t) => i18n::tf(format!("Record {first}–{last} di {t}")),
+            None => i18n::tf(format!("Record {first}–{last}")),
+        };
+        let mut s = format!("{}   —   {range}", self.last_sql);
         if !self.edits.is_empty() {
-            s.push_str(&format!("   •   {} modifiche in sospeso", self.edits.count()));
+            s.push_str(&i18n::tf(format!("   •   {} modifiche in sospeso", self.edits.count())));
         }
         s
     }
@@ -433,11 +436,11 @@ impl TableTab {
         ui.horizontal_wrapped(|ui| {
             if is_table {
                 if self.autocommit {
-                    if icons::button(ui, Db::Transaction, "Inizia transazione").on_hover_text("Le modifiche restano in sospeso finché non fai Commit (o Rollback)").clicked() {
+                    if icons::button(ui, Db::Transaction, "Inizia transazione").on_hover_text(i18n::t("Le modifiche restano in sospeso finché non fai Commit (o Rollback)")).clicked() {
                         self.autocommit = false;
                     }
                 } else {
-                    ui.label(RichText::new("● Transazione").color(egui::Color32::from_rgb(0xD9, 0x7A, 0x06)).strong());
+                    ui.label(RichText::new(i18n::t("● Transazione")).color(egui::Color32::from_rgb(0xD9, 0x7A, 0x06)).strong());
                     if icons::button_ex(ui, Db::Commit, "Commit", false, dirty && editable).clicked() {
                         self.apply(env);
                         self.autocommit = true;
@@ -461,7 +464,7 @@ impl TableTab {
             let cols_btn = icons::button(ui, Db::Columns, &cols_label);
             egui::Popup::menu(&cols_btn).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
                 ui.set_max_height(400.0);
-                if ui.button("Mostra tutte").clicked() {
+                if ui.button(i18n::t("Mostra tutte")).clicked() {
                     self.hidden.clear();
                     changed = true;
                 }
@@ -509,18 +512,18 @@ impl TableTab {
         }
         if let Some(n) = self.confirm_delete {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Eliminare {n} record dal database?")).strong());
-                if ui.button(RichText::new("Elimina").color(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C))).clicked() {
+                ui.label(RichText::new(i18n::tf(format!("Eliminare {n} record dal database?"))).strong());
+                if ui.button(RichText::new(i18n::t("Elimina")).color(egui::Color32::from_rgb(0xC4, 0x2B, 0x1C))).clicked() {
                     self.apply(env);
                 }
-                if ui.button("Annulla").clicked() {
+                if ui.button(i18n::t("Annulla")).clicked() {
                     self.edits.deleted.clear();
                     self.confirm_delete = None;
                 }
             });
         }
         if self.info.as_ref().is_some_and(|i| i.primary_key().is_empty()) && is_table {
-            ui.label(RichText::new("⚠ La tabella non ha chiave primaria: le modifiche usano tutti i valori della riga per identificarla.").small().weak());
+            ui.label(RichText::new(i18n::t("⚠ La tabella non ha chiave primaria: le modifiche usano tutti i valori della riga per identificarla.")).small().weak());
         }
 
         self.bottom_bar(ui, env, editable, dirty, &mut reload);
@@ -578,11 +581,15 @@ impl TableTab {
                     _ => self.grid.sel.active.0 as usize,
                 };
                 let abs = self.page * self.page_size + cur as u64 + 1;
-                let total = self.total.map(|t| format!(" di {t}")).unwrap_or_default();
-                ui.label(RichText::new(if self.row_count() == 0 { "Nessun record".to_string() } else { format!("Record {abs}{total}") }).small());
+                let text = match self.total {
+                    _ if self.row_count() == 0 => i18n::t("Nessun record").to_string(),
+                    Some(t) => i18n::tf(format!("Record {} di {}", abs, t)),
+                    None => i18n::tf(format!("Record {abs}")),
+                };
+                ui.label(RichText::new(text).small());
                 ui.separator();
                 let before = self.page_size;
-                egui::ComboBox::from_id_salt(("ps", self.id)).selected_text(format!("{} righe", self.page_size)).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt(("ps", self.id)).selected_text(i18n::tf(format!("{} righe", self.page_size))).show_ui(ui, |ui| {
                     for n in [100, 500, 1000, 5000, 10000, 50000] {
                         ui.selectable_value(&mut self.page_size, n, n.to_string());
                     }
@@ -600,7 +607,7 @@ impl TableTab {
                     self.page -= 1;
                     *reload = true;
                 }
-                ui.label(format!("Pagina {}{}", self.page + 1, pages.map(|p| format!(" / {p}")).unwrap_or_default()));
+                ui.label(i18n::tf(format!("Pagina {}{}", self.page + 1, pages.map(|p| format!(" / {p}")).unwrap_or_default())));
                 if ui.add_enabled(!dirty && self.page < last && self.data.rows.len() as u64 == self.page_size, egui::Button::new("▶").small()).clicked() {
                     self.page += 1;
                     *reload = true;
@@ -645,7 +652,7 @@ impl TableTab {
         }
         egui::Panel::right(egui::Id::unique(("celled", self.id))).resizable(true).default_size(320.0).min_size(220.0).show(ui, |ui| {
             let Some((row, dc)) = key else {
-                ui.label(RichText::new("Seleziona una cella").weak());
+                ui.label(RichText::new(i18n::t("Seleziona una cella")).weak());
                 return;
             };
             let col = self.columns.get(dc).cloned().unwrap_or_default();
@@ -653,15 +660,15 @@ impl TableTab {
                 ui.strong(&col.name);
                 ui.label(RichText::new(&col.type_name).small().weak());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(format!("riga {}", row + 1)).small().weak());
+                    ui.label(RichText::new(i18n::tf(format!("riga {}", row + 1))).small().weak());
                 });
             });
             let binary = matches!(value, Some(Value::Bytes(_)));
             let is_null = matches!(value, None | Some(Value::Null));
             if let Some(Value::Bytes(b)) = &value {
-                ui.label(RichText::new(format!("Dati binari: {} byte", b.len())).small());
+                ui.label(RichText::new(i18n::tf(format!("Dati binari: {} byte", b.len()))).small());
             } else if is_null {
-                ui.label(RichText::new("NULL").small().weak().italics());
+                ui.label(RichText::new(i18n::t("NULL")).small().weak().italics());
             }
             let can_edit = editable && !binary;
             ui.horizontal(|ui| {
@@ -669,12 +676,12 @@ impl TableTab {
                     self.set_cell(row, dc, Some(self.cell_buf.clone()));
                     self.cell_key = None;
                 }
-                if ui.add_enabled(editable, egui::Button::new("NULL")).on_hover_text("Imposta a NULL").clicked() {
+                if ui.add_enabled(editable, egui::Button::new(i18n::t("NULL"))).on_hover_text(i18n::t("Imposta a NULL")).clicked() {
                     self.set_cell(row, dc, None);
                     self.cell_key = None;
                 }
                 let json_like = col.kind == ColumnKind::Json || self.cell_buf.trim_start().starts_with(['{', '[']);
-                if json_like && ui.button("{ } Formatta JSON").clicked() {
+                if json_like && ui.button(i18n::t("{ } Formatta JSON")).clicked() {
                     match serde_json::from_str::<serde_json::Value>(&self.cell_buf).and_then(|v| serde_json::to_string_pretty(&v)) {
                         Ok(p) => self.cell_buf = p,
                         Err(e) => env.actions.push(Action::Notice(format!("JSON non valido: {e}"), true)),
@@ -711,16 +718,16 @@ impl TableTab {
     fn form_view(&mut self, ui: &mut egui::Ui, editable: bool) {
         let total = self.row_count();
         if total == 0 {
-            ui.label(RichText::new("Nessun record").weak());
+            ui.label(RichText::new(i18n::t("Nessun record")).weak());
             return;
         }
         let row = self.form_row.unwrap_or(self.grid.sel.active.0 as usize).min(total - 1);
         ui.horizontal(|ui| {
-            if ui.add_enabled(row > 0, egui::Button::new("◀ Precedente")).clicked() {
+            if ui.add_enabled(row > 0, egui::Button::new(i18n::t("◀ Precedente"))).clicked() {
                 self.form_row = Some(row - 1);
             }
-            ui.label(format!("Record {} di {}", row + 1, total));
-            if ui.add_enabled(row + 1 < total, egui::Button::new("Successivo ▶")).clicked() {
+            ui.label(i18n::tf(format!("Record {} di {}", row + 1, total)));
+            if ui.add_enabled(row + 1 < total, egui::Button::new(i18n::t("Successivo ▶"))).clicked() {
                 self.form_row = Some(row + 1);
             }
         });
@@ -764,7 +771,7 @@ impl TableTab {
                             picker_open = Some((i, r.rect));
                         }
                         ui.label(RichText::new(&col.type_name).small().weak());
-                        if editable && !null && ui.small_button("NULL").clicked() {
+                        if editable && !null && ui.small_button(i18n::t("NULL")).clicked() {
                             commits.push((dc, None));
                             buf.clear();
                         }

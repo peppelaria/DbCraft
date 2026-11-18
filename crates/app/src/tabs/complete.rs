@@ -258,7 +258,7 @@ mod tests {
     use super::*;
 
     fn obj(name: &str, kind: ObjectKind) -> SchemaObject {
-        SchemaObject { name: name.into(), kind, rows: None, comment: None }
+        SchemaObject { name: name.into(), kind, ..Default::default() }
     }
 
     fn catalog() -> Catalog {
