@@ -114,17 +114,20 @@ Apple Silicon.
 
 ### Releasing (maintainers)
 
-Releases are built and published by GitHub Actions **automatically**:
+Releases are built and published by GitHub Actions. The version number is handled for you:
 
-1. Bump `version` in `[workspace.package]` in `Cargo.toml` (e.g. `0.1.0` → `0.2.0`), commit and
-   push to `main`.
-2. The **Release** workflow notices the new version (if no release `v<version>` exists yet), runs
-   clippy and the tests, builds macOS (universal), Windows x64, Linux x64 and Linux arm64, then
-   creates the tag `v<version>` and the GitHub release with the packages and `SHA256SUMS.txt`.
-   Versions below 1.0 or with a suffix (`1.0.0-beta.1`) are marked as pre-releases.
+- **By hand**: **Actions → Release → Run workflow**, leave *Version number* on `auto` and press
+  Run. `auto` releases the version in `Cargo.toml` if it has no release yet, otherwise the next
+  patch version (`0.1.0` → `0.1.1`); choose `minor` (`0.2.0`) or `major` (`1.0.0`) to bump that
+  part instead. Once clippy and the tests pass, the workflow commits the new version to
+  `Cargo.toml`/`Cargo.lock` on `main` ("Release v<version>"); run `git pull` afterwards.
+- **Automatically**: if you bump `version` in `[workspace.package]` yourself and push to `main`,
+  that version is released.
 
-Pushes that do not change the version do not create releases. The workflow can still be started
-by hand (**Actions → Release → Run workflow**), e.g. to make a draft release.
+Either way the workflow builds macOS (universal), Windows x64, Linux x64 and Linux arm64, then
+creates the tag `v<version>` and the GitHub release with the packages and `SHA256SUMS.txt`.
+Versions below 1.0 or with a suffix (`1.0.0-beta.1`) are marked as pre-releases. Pushes that do
+not change the version do not create releases.
 
 Every push and pull request also runs **CI** (`.github/workflows/ci.yml`): clippy, tests on
 Linux, macOS and Windows, and the driver suite against real PostgreSQL, MySQL, MariaDB and SQL

@@ -115,17 +115,21 @@ su Apple Silicon gira in emulazione.
 
 ### Pubblicare una release (manutentori)
 
-Le release vengono compilate e pubblicate da GitHub Actions **in automatico**:
+Le release vengono compilate e pubblicate da GitHub Actions. Il numero di versione è gestito in
+automatico:
 
-1. Aggiorna `version` in `[workspace.package]` nel `Cargo.toml` (es. `0.1.0` → `0.2.0`), fai
-   commit e push su `main`.
-2. Il workflow **Release** vede la nuova versione (se la release `v<versione>` non esiste ancora),
-   esegue clippy e i test, compila macOS (universale), Windows x64, Linux x64 e Linux arm64, poi
-   crea il tag `v<versione>` e la release GitHub con i pacchetti e `SHA256SUMS.txt`. Le versioni
-   sotto la 1.0 o con un suffisso (`1.0.0-beta.1`) sono segnate come pre-release.
+- **A mano**: **Actions → Release → Run workflow**, lascia *Version number* su `auto` e premi Run.
+  `auto` pubblica la versione del `Cargo.toml` se non ha ancora una release, altrimenti la patch
+  successiva (`0.1.0` → `0.1.1`); scegli `minor` (`0.2.0`) o `major` (`1.0.0`) per incrementare
+  quella parte. Dopo clippy e i test, il workflow fa il commit della nuova versione in
+  `Cargo.toml`/`Cargo.lock` su `main` ("Release v<versione>"); poi fai `git pull`.
+- **In automatico**: se aggiorni tu `version` in `[workspace.package]` e fai push su `main`, viene
+  pubblicata quella versione.
 
-I push che non cambiano la versione non creano release. Il workflow si può comunque avviare a mano
-(**Actions → Release → Run workflow**), ad esempio per creare una release in bozza.
+In entrambi i casi il workflow compila macOS (universale), Windows x64, Linux x64 e Linux arm64,
+poi crea il tag `v<versione>` e la release GitHub con i pacchetti e `SHA256SUMS.txt`. Le versioni
+sotto la 1.0 o con un suffisso (`1.0.0-beta.1`) sono segnate come pre-release. I push che non
+cambiano la versione non creano release.
 
 Ogni push e pull request esegue anche la **CI** (`.github/workflows/ci.yml`): clippy, test su
 Linux, macOS e Windows, e la suite dei driver su server reali PostgreSQL, MySQL, MariaDB e SQL
