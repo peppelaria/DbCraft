@@ -1,253 +1,375 @@
-# Release. Two ways to start it:
-# - By hand (Actions → Release → Run workflow): the version number is computed for you. "auto"
-#   releases the Cargo.toml version if it has no release yet, otherwise the next patch version
-#   (0.1.0 → 0.1.1); "minor"/"major" bump that part instead. The workflow commits the new version
-#   to Cargo.toml/Cargo.lock on main ("Release v<version>") once clippy and the tests pass.
-# - Automatically, when a push to main changes the version in Cargo.toml and no release
-#   `v<version>` exists yet.
-# Versions below 1.0 or with a suffix (0.2.0, 1.0.0-beta.1) are marked as pre-releases.
-# Builds DbCraft for macOS (universal .app), Windows (x64) and Linux (x64 and arm64), then
-# creates the GitHub release `v<version>` with the packages and their SHA-256 checksums.
 name: Release
 
+# A release is published only when you decide: Actions → Release → "Run workflow" (branch main).
+# Version = MAJOR.MINOR taken from Cargo.toml ([workspace.package]) + PATCH counted from the
+# existing tags:
+#   Cargo.toml 0.1.x, no v0.1.* tag yet  -> v0.1.0
+#   last tag v0.1.4                       -> v0.1.5
+# To start a new series (0.2.0, 1.0.0…) change the version in Cargo.toml.
+# The number is written into Cargo.toml/Cargo.lock only inside the build: nothing is committed.
+# Packages: macOS Apple silicon (.dmg), Linux x86_64 (.deb and .tar.gz), Windows x86_64 (.zip).
+# After publishing, only the two newest releases are kept (older releases and their tags are removed).
+# CI (ci.yml) still builds and tests every push and pull request.
+
 on:
-  push:
-    branches: [main]
-    paths: [Cargo.toml]
   workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version number: auto = Cargo.toml version if unreleased, else next patch"
-        type: choice
-        options: [auto, patch, minor, major]
-        default: auto
-      draft:
-        description: "Create as draft (publish it by hand afterwards)"
-        type: boolean
-        default: false
+
+# read-only by default; the step that publishes the release asks for more
+permissions:
+  contents: read
 
 concurrency:
   group: release
   cancel-in-progress: false
-
-permissions:
-  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
 jobs:
-  prepare:
-    name: Version and tests
+  version:
+    # only from the main branch
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.v.outputs.version }}
-      release: ${{ steps.v.outputs.release }}
-      prerelease: ${{ steps.v.outputs.prerelease }}
-      draft: ${{ steps.v.outputs.draft }}
-      sha: ${{ steps.commit.outputs.sha }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Resolve version
-        id: v
-        env:
-          BUMP: ${{ inputs.bump }}
-          INPUT_DRAFT: ${{ inputs.draft }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          current=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml)
-          exists() { gh release view "v$1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; }
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            if exists "$current"; then
-              echo "::notice::Release v$current already exists: nothing to do."
-              echo "release=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            version="$current"
-            draft=false
-          else
-            core="${current%%-*}"
-            IFS=. read -r major minor patch <<< "$core"
-            case "$BUMP" in
-              auto)
-                if exists "$current"; then version="$major.$minor.$((patch + 1))"; else version="$current"; fi ;;
-              patch) version="$major.$minor.$((patch + 1))" ;;
-              minor) version="$major.$((minor + 1)).0" ;;
-              major) version="$((major + 1)).0.0" ;;
-            esac
-            # Skip numbers already released (e.g. a release made without bumping Cargo.toml).
-            while exists "$version"; do
-              IFS=. read -r major minor patch <<< "$version"
-              version="$major.$minor.$((patch + 1))"
-            done
-            draft="$INPUT_DRAFT"
-          fi
-          case "$version" in 0.*|*-*) prerelease=true ;; *) prerelease=false ;; esac
-          {
-            echo "version=$version"
-            echo "current=$current"
-            echo "release=true"
-            echo "prerelease=$prerelease"
-            echo "draft=$draft"
-          } >> "$GITHUB_OUTPUT"
-          echo "### Releasing v$version" >> "$GITHUB_STEP_SUMMARY"
-          echo "Cargo.toml $current → $version, prerelease=$prerelease draft=$draft"
-      - name: Linux build dependencies
-        if: steps.v.outputs.release == 'true'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libdbus-1-dev libxkbcommon-dev libgtk-3-dev
-      - name: Rust toolchain
-        if: steps.v.outputs.release == 'true'
-        run: rustup toolchain install stable --profile minimal --component clippy && rustup default stable
-      - name: Set version
-        if: steps.v.outputs.release == 'true' && steps.v.outputs.version != steps.v.outputs.current
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
-        run: |
-          sed -i '/^\[workspace.package\]/,/^\[/s/^version *= *".*"/version = "'"$VERSION"'"/' Cargo.toml
-          cargo update --workspace
-          git diff --stat
-      - if: steps.v.outputs.release == 'true'
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - if: steps.v.outputs.release == 'true'
-        run: cargo test --workspace --locked
-      - name: Commit version
-        id: commit
-        if: steps.v.outputs.release == 'true'
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
-        run: |
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "Release v$VERSION"
-            git push origin "HEAD:$GITHUB_REF_NAME"
-          fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-  build:
-    name: Build ${{ matrix.name }}
-    needs: prepare
-    if: needs.prepare.outputs.release == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macos-universal
-            os: macos-latest
-            targets: aarch64-apple-darwin x86_64-apple-darwin
-          - name: windows-x64
-            os: windows-latest
-            targets: x86_64-pc-windows-msvc
-          # Built on the oldest supported Ubuntu so the binary runs on older glibc versions.
-          - name: linux-x64
-            os: ubuntu-22.04
-            targets: x86_64-unknown-linux-gnu
-          - name: linux-arm64
-            os: ubuntu-22.04-arm
-            targets: aarch64-unknown-linux-gnu
-    runs-on: ${{ matrix.os }}
-    env:
-      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
-      - name: Linux build dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libdbus-1-dev libxkbcommon-dev libgtk-3-dev
-      - name: Rust toolchain
-        shell: bash
+          fetch-depth: 0
+          fetch-tags: true
+      - id: v
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          for t in ${{ matrix.targets }}; do rustup target add "$t"; done
+          base=$(sed -n 's/^version = "\([0-9]*\)\.\([0-9]*\)\..*"/\1.\2/p' Cargo.toml | head -1)
+          test -n "$base" || { echo "version not found in Cargo.toml"; exit 1; }
+          last=$(git tag -l "v$base.*" | sed "s/^v$base\.//" | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
+          if [ -z "$last" ]; then patch=0; else patch=$((last + 1)); fi
+          echo "Version: $base.$patch"
+          echo "version=$base.$patch" >> "$GITHUB_OUTPUT"
+          echo "### DbCraft $base.$patch" >> "$GITHUB_STEP_SUMMARY"
+
+  macos:
+    name: macOS (Apple silicon)
+    needs: version
+    runs-on: macos-15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    # Apple Developer ID (optional): with the repository secrets APPLE_CERTIFICATE,
+    # APPLE_CERTIFICATE_PASSWORD, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID the app is signed with
+    # the Developer ID and notarized by Apple, so macOS opens it with no warning. Without them it
+    # is signed ad hoc (the user must allow it once).
+    # The secrets are given only to the signing and notarization steps, after the build: the
+    # build scripts of the dependencies never see them, and the signing keychain does not exist
+    # while they run.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set version
+        run: |
+          perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' Cargo.toml
+          perl -0pi -e 's/(name = "(?:dbcraft|db-core|db-drivers|dbgrid)"\r?\nversion = ")[^"]*"/$1$ENV{VERSION}"/g' Cargo.lock
+
+      # (tests in the dev profile: in release they would take as long as a second build)
+      - name: Test
+        env:
+          CARGO_PROFILE_DEV_DEBUG: '0'
+        run: cargo test --workspace --locked --target aarch64-apple-darwin
+
       - name: Build
-        shell: bash
+        run: cargo build --release --locked -p dbcraft --target aarch64-apple-darwin
+
+      - name: Third-party licences (full texts)
+        run: python3 packaging/collect_licenses.py build/THIRD-PARTY-LICENSES.txt
+
+      - name: Signing certificate (Developer ID, if configured)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          HAS_NOTARY: ${{ secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
         run: |
-          for t in ${{ matrix.targets }}; do
-            cargo build --release --locked -p dbcraft --target "$t"
-          done
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::APPLE_CERTIFICATE not set: the app will be signed ad hoc and not notarized"
+            exit 0
+          fi
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/dbcraft-signing.keychain-db"
+          CERT="$RUNNER_TEMP/dbcraft-signing.p12"
+          KC_PASS="$(openssl rand -hex 24)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERT"
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security import "$CERT" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -t cert -f pkcs12 -k "$KEYCHAIN"
+          rm -f "$CERT"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/Developer ID Application/ { print $2; exit }')"
+          test -n "$IDENTITY" || { echo "no 'Developer ID Application' identity in APPLE_CERTIFICATE"; exit 1; }
+          echo "MACOS_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "MACOS_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          if [ "$HAS_NOTARY" = "true" ]; then echo "CAN_NOTARIZE=1" >> "$GITHUB_ENV"; fi
+
+      - name: App bundle
+        run: |
+          APP=build/DbCraft.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/aarch64-apple-darwin/release/dbcraft "$APP/Contents/MacOS/dbcraft"
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          cp README.md CREDITS.md LICENSE-MIT LICENSE-APACHE build/THIRD-PARTY-LICENSES.txt "$APP/Contents/Resources/"
+          printf 'APPL????' > "$APP/Contents/PkgInfo"
+          xattr -cr "$APP"
+          # Sign inside-out: the executable, then the bundle. With a Developer ID: hardened
+          # runtime + secure timestamp (needed for notarization); otherwise ad hoc.
+          sign() {
+            if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
+              codesign --force --sign "$MACOS_SIGN_IDENTITY" --keychain "$MACOS_KEYCHAIN" --timestamp \
+                --options runtime --entitlements packaging/macos/entitlements.plist "$@"
+            else
+              codesign --force --sign - --timestamp=none "$@"
+            fi
+          }
+          sign "$APP/Contents/MacOS/dbcraft"
+          sign "$APP"
+          codesign --verify --strict --deep --verbose=2 "$APP"
+          lipo -info "$APP/Contents/MacOS/dbcraft"
+          echo "app: $(du -sh "$APP" | cut -f1)"
+
+      - name: Notarize the app (if configured)
+        if: env.MACOS_SIGN_IDENTITY != '' && env.CAN_NOTARIZE == '1'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP=build/DbCraft.app
+          ditto -c -k --keepParent "$APP" build/notarize.zip
+          xcrun notarytool submit build/notarize.zip --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait --timeout 1h
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute -vvv "$APP"
+          echo "NOTARIZED=1" >> "$GITHUB_ENV"
+
+      - name: DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           mkdir -p dist
-          scripts/package-macos.sh "$VERSION" dist \
-            target/aarch64-apple-darwin/release/dbcraft \
-            target/x86_64-apple-darwin/release/dbcraft
-          rm -rf dist/DbCraft.app
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          name="DbCraft-${VERSION}-${{ matrix.name }}"
-          mkdir -p "dist/$name"
-          cp target/${{ matrix.targets }}/release/dbcraft "dist/$name/"
-          cp README.md README.it.md CREDITS.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
-          rm -rf "dist/$name"
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $name = "DbCraft-$env:VERSION-${{ matrix.name }}"
-          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
-          Copy-Item "target/${{ matrix.targets }}/release/dbcraft.exe" "dist/$name/"
-          Copy-Item README.md, README.it.md, CREDITS.md, LICENSE-MIT, LICENSE-APACHE "dist/$name/"
-          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
-          Remove-Item -Recurse "dist/$name"
+          DMG="dist/DbCraft-$VERSION-macos-arm64.dmg"
+          rm -rf build/dmg && mkdir -p build/dmg
+          cp -R build/DbCraft.app build/dmg/
+          ln -s /Applications build/dmg/Applications
+          # hdiutil sometimes fails with "Resource busy" on the runners: retry
+          for i in 1 2 3; do
+            # ULMO (lzma, macOS 10.15+): a third smaller than UDZO (zlib)
+            hdiutil create -volname "DbCraft $VERSION" -srcfolder build/dmg -ov -format ULMO "$DMG" && break
+            sleep 10
+          done
+          test -f "$DMG"
+          # the disk image too: signed, notarized and stapled (with a Developer ID)
+          if [ -n "${NOTARIZED:-}" ]; then
+            codesign --force --sign "$MACOS_SIGN_IDENTITY" --keychain "$MACOS_KEYCHAIN" --timestamp "$DMG"
+            xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" --wait --timeout 1h
+            xcrun stapler staple "$DMG"
+          fi
+          ls -la dist
+
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.name }}
+          name: macos
           path: dist/*
           if-no-files-found: error
 
-  publish:
-    name: Publish GitHub release
-    needs: [prepare, build]
+  linux:
+    name: Linux (x86_64)
+    needs: version
+    # older Ubuntu = older glibc = runs on more distributions
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libdbus-1-dev libxkbcommon-dev libgtk-3-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      - name: Set version
+        run: |
+          perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' Cargo.toml
+          perl -0pi -e 's/(name = "(?:dbcraft|db-core|db-drivers|dbgrid)"\r?\nversion = ")[^"]*"/$1$ENV{VERSION}"/g' Cargo.lock
+
+      - name: Build
+        run: cargo build --release --locked -p dbcraft
+
+      - name: Third-party licences (full texts)
+        run: python3 packaging/collect_licenses.py build/THIRD-PARTY-LICENSES.txt
+
+      - name: tar.gz
+        run: |
+          D="dbcraft-$VERSION-linux-x86_64"
+          mkdir -p "build/$D" dist
+          cp target/release/dbcraft README.md CREDITS.md LICENSE-MIT LICENSE-APACHE build/THIRD-PARTY-LICENSES.txt "build/$D/"
+          cp packaging/linux/dbcraft.desktop "build/$D/"
+          tar -C build -czf "dist/$D.tar.gz" "$D"
+
+      - name: .deb
+        run: |
+          cargo deb -p dbcraft --no-build --deb-version "$VERSION" -o "dist/dbcraft_${VERSION}_amd64.deb"
+          dpkg-deb --info "dist/dbcraft_${VERSION}_amd64.deb"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x86_64)
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set version
+        run: |
+          perl -0pi -e 's/^version = "[^"]*"/version = "$ENV{VERSION}"/m' Cargo.toml
+          perl -0pi -e 's/(name = "(?:dbcraft|db-core|db-drivers|dbgrid)"\r?\nversion = ")[^"]*"/$1$ENV{VERSION}"/g' Cargo.lock
+
+      - name: Build
+        run: cargo build --release --locked -p dbcraft
+
+      - name: Third-party licences (full texts)
+        # Python on Windows reads and writes cp1252 unless told otherwise
+        env:
+          PYTHONUTF8: "1"
+        run: python packaging/collect_licenses.py build/THIRD-PARTY-LICENSES.txt
+
+      # The Visual C++ runtime (vcruntime140.dll, msvcp140.dll…) next to the exe, as Microsoft
+      # allows ("app-local"): many PCs do not have it installed and without it the app does not
+      # start ("VCRUNTIME140.dll was not found"). Only the DLLs the exe really imports are copied,
+      # from Visual Studio's redistributable folder.
+      - name: Visual C++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $crt = & $vswhere -latest -products * -find "VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" | Sort-Object | Select-Object -Last 1
+          if (-not $dumpbin -or -not $crt) { throw "dumpbin or the runtime folder not found" }
+          Write-Host "runtime from: $crt"
+          $deps = & $dumpbin /nologo /dependents target/release/dbcraft.exe |
+            ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^(vcruntime|msvcp|concrt|vccorlib)\d.*\.dll$' }
+          Write-Host "runtime DLLs imported: $($deps -join ', ')"
+          New-Item -ItemType Directory -Force -Path build/vcrt | Out-Null
+          foreach ($dll in $deps) {
+            $src = Join-Path $crt $dll
+            if (-not (Test-Path $src)) { throw "$dll is not among the redistributable files in $crt" }
+            Copy-Item $src build/vcrt/
+          }
+
+      - name: zip
+        shell: pwsh
+        run: |
+          $d = "dbcraft-$env:VERSION-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path "build/$d", dist | Out-Null
+          Copy-Item target/release/dbcraft.exe, README.md, CREDITS.md, LICENSE-MIT, LICENSE-APACHE, build/THIRD-PARTY-LICENSES.txt "build/$d/"
+          Get-ChildItem build/vcrt -Filter *.dll | Copy-Item -Destination "build/$d/"
+          Compress-Archive -Path "build/$d" -DestinationPath "dist/$d.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, macos, linux, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
-      VERSION: ${{ needs.prepare.outputs.version }}
-      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
-      DRAFT: ${{ needs.prepare.outputs.draft }}
-      SHA: ${{ needs.prepare.outputs.sha }}
-      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+
       - name: Checksums
         run: |
           cd dist
-          sha256sum -- * > SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Release notes
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: DbCraft ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: true
+          body: |
+            ## Install
+
+            - **macOS 11+ (Apple silicon: M1, M2, M3, M4…)**: `DbCraft-${{ env.VERSION }}-macos-arm64.dmg`,
+              then drag DbCraft to Applications.
+
+              If macOS says it cannot verify the app (builds without the Developer ID), allow it once:
+              right-click → **Open**, or System Settings → Privacy & Security → **Open Anyway**.
+            - **Debian / Ubuntu**: `sudo apt install ./dbcraft_${{ env.VERSION }}_amd64.deb`
+            - **Other Linux (x86_64, glibc 2.35+)**: `dbcraft-${{ env.VERSION }}-linux-x86_64.tar.gz`
+            - **Windows 10/11 (x64)**: `dbcraft-${{ env.VERSION }}-windows-x86_64.zip`, unzip and run
+              `dbcraft.exe` (SmartScreen may warn: "More info" → "Run anyway").
+
+            Verify downloads against `SHA256SUMS.txt`.
+            See the [README](https://github.com/rmpaolillo/DbCraft#download) for details.
+          files: dist/*
+          fail_on_unmatched_files: true
+
+      # Only the two newest releases stay on GitHub: the older ones go, tag included.
+      # The tags of the two that stay keep the version count going (e.g. v0.1.0 -> v0.1.1).
+      - name: Keep only the last two releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEEP: 2
         run: |
-          cat > notes.md <<'EOF'
-          ## Downloads
-
-          | Platform | File |
-          |---|---|
-          | macOS 11+ (Apple silicon and Intel) | `DbCraft-VERSION-macos-universal.zip` |
-          | Windows 10/11 x64 | `DbCraft-VERSION-windows-x64.zip` |
-          | Linux x64 (glibc 2.35+) | `DbCraft-VERSION-linux-x64.tar.gz` |
-          | Linux arm64 (glibc 2.35+) | `DbCraft-VERSION-linux-arm64.tar.gz` |
-
-          The builds are not notarised or code-signed with a certificate:
-          - **macOS**: unzip and move `DbCraft.app` to Applications. On first launch use right-click → Open, or run `xattr -dr com.apple.quarantine /Applications/DbCraft.app`.
-          - **Windows**: SmartScreen may warn; choose "More info" → "Run anyway".
-          - **Linux**: needs a desktop session (X11 or Wayland) and D-Bus/Secret Service for saved passwords.
-
-          Verify downloads against `SHA256SUMS.txt`.
-          EOF
-          sed -i "s/VERSION/${VERSION}/g" notes.md
-      - name: Create release
-        run: |
-          flags=(--title "DbCraft v${VERSION}" --notes-file notes.md --generate-notes --target "$SHA")
-          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
-          if [ "$DRAFT" = "true" ]; then flags+=(--draft); fi
-          gh release create "v${VERSION}" dist/* --repo "$GITHUB_REPOSITORY" "${flags[@]}"
+          gh release list --limit 1000 --exclude-drafts --json tagName,createdAt \
+            --jq "sort_by(.createdAt) | reverse | .[${KEEP}:] | .[].tagName" > old.txt
+          echo "Releases to remove:"; cat old.txt
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            [ "$tag" = "v${VERSION}" ] && continue   # never the one just published
+            gh release delete "$tag" --cleanup-tag --yes || echo "::warning::could not remove $tag"
+          done < old.txt

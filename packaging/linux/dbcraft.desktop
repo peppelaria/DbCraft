@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=DbCraft
+GenericName=Database client
+Comment=Desktop client for MySQL, MariaDB, PostgreSQL, SQL Server and SQLite
+Exec=dbcraft %f
+Icon=dbcraft
+Terminal=false
+Categories=Development;Database;
+Keywords=database;sql;mysql;mariadb;postgresql;sqlserver;sqlite;
+MimeType=application/vnd.sqlite3;application/x-sqlite3;
+StartupWMClass=dbcraft

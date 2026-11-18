@@ -45,10 +45,14 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 ### Download
 
 Prebuilt packages are on the [Releases](https://github.com/rmpaolillo/DbCraft/releases) page:
-a universal `.app` for macOS 11+, Windows x64, and Linux x64/arm64 (glibc 2.35+). The builds are
-not notarised: on macOS, open the app with right-click → Open the first time (or run
-`xattr -dr com.apple.quarantine /Applications/DbCraft.app`); on Windows, SmartScreen may ask for
-confirmation.
+
+- **macOS 11+ (Apple silicon)**: `DbCraft-<version>-macos-arm64.dmg`, then drag DbCraft to
+  Applications. Builds without an Apple Developer ID are signed ad hoc: allow the app once with
+  right-click → **Open**, or System Settings → Privacy & Security → **Open Anyway**.
+- **Debian / Ubuntu**: `sudo apt install ./dbcraft_<version>_amd64.deb`
+- **Other Linux (x86_64, glibc 2.35+)**: `dbcraft-<version>-linux-x86_64.tar.gz`
+- **Windows 10/11 (x64)**: `dbcraft-<version>-windows-x86_64.zip` (the Visual C++ runtime is
+  included); SmartScreen may ask for confirmation.
 
 ### Requirements
 
@@ -114,20 +118,25 @@ Apple Silicon.
 
 ### Releasing (maintainers)
 
-Releases are built and published by GitHub Actions. The version number is handled for you:
+A release is published only when you decide: **Actions → Release → Run workflow** (branch
+`main`). There is nothing to edit first: the version number is ready.
 
-- **By hand**: **Actions → Release → Run workflow**, leave *Version number* on `auto` and press
-  Run. `auto` releases the version in `Cargo.toml` if it has no release yet, otherwise the next
-  patch version (`0.1.0` → `0.1.1`); choose `minor` (`0.2.0`) or `major` (`1.0.0`) to bump that
-  part instead. Once clippy and the tests pass, the workflow commits the new version to
-  `Cargo.toml`/`Cargo.lock` on `main` ("Release v<version>"); run `git pull` afterwards.
-- **Automatically**: if you bump `version` in `[workspace.package]` yourself and push to `main`,
-  that version is released.
+- The version is `MAJOR.MINOR` from `Cargo.toml` (`[workspace.package] version`) plus a `PATCH`
+  counted from the existing tags: no `v0.1.*` tag yet → `v0.1.0`; last tag `v0.1.4` → `v0.1.5`.
+- To start a new series (`0.2.0`, `1.0.0`…) change the version in `Cargo.toml` and push; the
+  next release starts at `.0`.
+- The number is written into `Cargo.toml`/`Cargo.lock` only inside the build: nothing is
+  committed back to the repository.
 
-Either way the workflow builds macOS (universal), Windows x64, Linux x64 and Linux arm64, then
-creates the tag `v<version>` and the GitHub release with the packages and `SHA256SUMS.txt`.
-Versions below 1.0 or with a suffix (`1.0.0-beta.1`) are marked as pre-releases. Pushes that do
-not change the version do not create releases.
+The workflow tests and builds macOS Apple silicon (`.dmg`), Linux x86_64 (`.deb` and `.tar.gz`)
+and Windows x86_64 (`.zip`), then publishes the release `v<version>` with the packages and
+`SHA256SUMS.txt`. Only the two newest releases are kept: older releases and their tags are
+removed.
+
+Optional macOS signing: with the repository secrets `APPLE_CERTIFICATE` (base64 `.p12` with a
+"Developer ID Application" identity), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`
+(app-specific password) and `APPLE_TEAM_ID`, the app and the DMG are signed with the Developer ID
+and notarized; without them they are signed ad hoc.
 
 Every push and pull request also runs **CI** (`.github/workflows/ci.yml`): clippy, tests on
 Linux, macOS and Windows, and the driver suite against real PostgreSQL, MySQL, MariaDB and SQL
