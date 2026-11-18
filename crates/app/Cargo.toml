@@ -66,6 +66,10 @@ assets = [
     ["../../build/THIRD-PARTY-LICENSES.txt", "usr/share/doc/dbcraft/THIRD-PARTY-LICENSES.txt", "644"],
 ]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# the native menu bar with Edit (Cmd+C / Cmd+V / Cmd+A in the AI chat pages), as in OpenSlate
+muda = { version = "0.17", default-features = false }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # the WebViews of the AI chat (WebKitGTK)
 gtk = "0.18"

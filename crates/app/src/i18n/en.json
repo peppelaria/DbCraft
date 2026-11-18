@@ -269,6 +269,7 @@
  "Errore": "Error",
  "Errore: {e}": "Error: {e}",
  "Esci": "Quit",
+ "Esci da DbCraft": "Quit DbCraft",
  "Esegui": "Execute",
  "Esegui SQL": "Run SQL",
  "Esegui istruzione corrente   ⌘⇧↩": "Run Current Statement   ⌘⇧↩",

@@ -175,6 +175,9 @@ pub struct App {
     chat_open: bool,
     chat_rect: Option<egui::Rect>,
     settings_rect: Option<egui::Rect>,
+    /// macOS: the native menu bar (kept alive).
+    #[cfg(target_os = "macos")]
+    _mac_menu: Option<muda::Menu>,
 }
 
 pub fn icon(kind: ObjectKind) -> Db {
@@ -257,6 +260,8 @@ impl App {
             chat_open: false,
             chat_rect: None,
             settings_rect: None,
+            #[cfg(target_os = "macos")]
+            _mac_menu: mac_menu(),
         };
         // the AI chat: its server and its database tools on DbCraft's runtime
         crate::dbagent::set_runtime(app.backend.handle());
@@ -1164,6 +1169,12 @@ impl App {
     /// Each frame: what the chat needs to know, what it asked to do, and the messages of the pages.
     fn ai_tick(&mut self, ctx: &egui::Context) {
         use crate::embed::Slot;
+        #[cfg(target_os = "macos")]
+        while let Ok(ev) = muda::MenuEvent::receiver().try_recv() {
+            if ev.id() == "quit" {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
         self.embeds.set_wake(ctx);
         crate::dbagent::set_connections(&self.configs);
         match &self.loc {
@@ -2053,4 +2064,46 @@ impl eframe::App for App {
         self.apply_actions();
         self.place_pages(&ctx, frame);
     }
+}
+
+/// macOS: the app's native menu bar, as in OpenSlate. The «Edit» menu is what makes Cmd+C, Cmd+V
+/// and Cmd+A work in the embedded pages (AI chat, AI settings): a WebView gets copy and paste
+/// from the menu, not from the keys.
+#[cfg(target_os = "macos")]
+fn mac_menu() -> Option<muda::Menu> {
+    use muda::{Menu, PredefinedMenuItem, Submenu};
+    let menu = Menu::new();
+    let app = Submenu::new("DbCraft", true);
+    let edit = Submenu::new(i18n::t("Modifica"), true);
+    app.append_items(&[
+        &PredefinedMenuItem::about(Some(i18n::t("Informazioni su DbCraft")), None),
+        &PredefinedMenuItem::separator(),
+        &PredefinedMenuItem::hide(None),
+        &PredefinedMenuItem::hide_others(None),
+        &PredefinedMenuItem::show_all(None),
+        &PredefinedMenuItem::separator(),
+        // not the system «Quit» (it just kills the app): this one closes the window
+        &muda::MenuItem::with_id(
+            "quit",
+            i18n::t("Esci da DbCraft"),
+            true,
+            Some(muda::accelerator::Accelerator::new(Some(muda::accelerator::Modifiers::SUPER), muda::accelerator::Code::KeyQ)),
+        ),
+    ])
+    .ok()?;
+    edit.append_items(&[
+        &PredefinedMenuItem::undo(None),
+        &PredefinedMenuItem::redo(None),
+        &PredefinedMenuItem::separator(),
+        &PredefinedMenuItem::cut(None),
+        &PredefinedMenuItem::copy(None),
+        &PredefinedMenuItem::paste(None),
+        &PredefinedMenuItem::select_all(None),
+    ])
+    .ok()?;
+    let window = Submenu::new(i18n::t("Finestra"), true);
+    window.append_items(&[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::maximize(None), &PredefinedMenuItem::fullscreen(None)]).ok()?;
+    menu.append_items(&[&app, &edit, &window]).ok()?;
+    menu.init_for_nsapp();
+    Some(menu)
 }

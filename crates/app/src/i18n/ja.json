@@ -269,6 +269,7 @@
  "Errore": "エラー",
  "Errore: {e}": "エラー: {e}",
  "Esci": "終了",
+ "Esci da DbCraft": "DbCraft を終了",
  "Esegui": "実行",
  "Esegui SQL": "SQL を実行",
  "Esegui istruzione corrente   ⌘⇧↩": "現在のステートメントを実行   ⌘⇧↩",
