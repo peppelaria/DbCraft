@@ -28,6 +28,7 @@ env:
 
 jobs:
   version:
+    name: Next version number
     # only from the main branch
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -49,7 +50,7 @@ jobs:
           echo "### DbCraft $base.$patch" >> "$GITHUB_STEP_SUMMARY"
 
   macos:
-    name: macOS (Apple silicon)
+    name: macOS (Apple silicon) v${{ needs.version.outputs.version }}
     needs: version
     runs-on: macos-15
     env:
@@ -191,7 +192,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    name: Linux (x86_64)
+    name: Linux (x86_64) v${{ needs.version.outputs.version }}
     needs: version
     # older Ubuntu = older glibc = runs on more distributions
     runs-on: ubuntu-22.04
@@ -244,7 +245,7 @@ jobs:
           if-no-files-found: error
 
   windows:
-    name: Windows (x86_64)
+    name: Windows (x86_64) v${{ needs.version.outputs.version }}
     needs: version
     runs-on: windows-latest
     env:
@@ -311,7 +312,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish release
+    name: Publish v${{ needs.version.outputs.version }}
     needs: [version, macos, linux, windows]
     runs-on: ubuntu-24.04
     permissions:
