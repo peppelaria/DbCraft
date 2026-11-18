@@ -54,6 +54,19 @@ Prebuilt packages are on the [Releases](https://github.com/rmpaolillo/DbCraft/re
 - **Windows 10/11 (x64)**: `dbcraft-<version>-windows-x86_64.zip` (the Visual C++ runtime is
   included); SmartScreen may ask for confirmation.
 
+#### Updates
+
+An installed release checks GitHub for a newer release at start and every 12 hours. When there
+is one, a bar under the toolbar offers **Aggiorna** (download, SHA-256 check against
+`SHA256SUMS.txt`, install in place of this copy, then **Riavvia ora**), **Novità** (release
+notes) and **Salta questa versione**. The macOS app is swapped in place (the previous one is kept
+in the config folder under `updates/`), the Linux `.tar.gz` folder gets the new files, the
+`.deb` is installed with `pkexec dpkg -i`, and on Windows a helper swaps the files when the app
+closes. Saved connections, settings and keychain passwords are not touched. The toolbar button
+**Aggiornamenti** checks by hand and turns the notice or the automatic install on and off.
+Builds from source do not update themselves (`git pull`); to try the bar anyway, run with
+`DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`.
+
 ### Requirements
 
 - [Rust](https://rustup.rs) **1.95+** (edition 2024)

@@ -25,6 +25,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # the app knows it comes from a release: it then tells the user about newer releases and
+  # can update itself (crates/app/src/update.rs)
+  DBCRAFT_RELEASE: "1"
 
 jobs:
   version:

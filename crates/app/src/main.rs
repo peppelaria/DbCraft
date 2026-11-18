@@ -10,8 +10,11 @@ mod cli;
 mod dialogs;
 mod export;
 mod models;
+mod selfupdate;
 mod store;
 mod tabs;
+mod update;
+mod update_ui;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

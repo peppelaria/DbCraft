@@ -52,10 +52,11 @@ pub enum Db {
     Snippet,
     Explain,
     Keyword,
+    Update,
 }
 
 impl Db {
-    pub const ALL: [Db; 42] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword];
+    pub const ALL: [Db; 43] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword, Db::Update];
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -351,6 +352,12 @@ pub fn paint(p: &Painter, rect: Rect, icon: Db, c: Color32) {
         Db::Keyword => {
             g.rect(1.5, 4.0, 13.0, 8.0, Some(purple.gamma_multiply(0.25)), Some(purple));
             g.p.text(g.pt(8.0, 8.0), egui::Align2::CENTER_CENTER, "K", egui::FontId::proportional(8.5 * g.s), purple);
+        }
+        Db::Update => {
+            // A circle with an arrow up: a newer version.
+            g.circle(8.0, 8.0, 6.3, Some(blue), None);
+            g.line(&[(8.0, 12.0), (8.0, 6.0)], Color32::WHITE, 1.5);
+            g.line(&[(5.2, 8.2), (8.0, 5.0), (10.8, 8.2)], Color32::WHITE, 1.5);
         }
         Db::Objects => {
             for (y, col) in [(2.0f32, blue), (6.5, teal), (11.0, purple)] {

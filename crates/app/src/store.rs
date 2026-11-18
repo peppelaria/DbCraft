@@ -8,11 +8,51 @@ const SERVICE: &str = "dbcraft";
 /// Id prefix of connections that are never saved.
 pub const TRANSIENT: &str = "transient:";
 
-fn path() -> Option<PathBuf> {
+/// DbCraft's config folder (connections, settings, downloaded updates).
+pub fn config_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("DBCRAFT_CONFIG_DIR") {
-        return Some(PathBuf::from(dir).join("connections.json"));
+        return Some(PathBuf::from(dir));
     }
-    dirs::config_dir().map(|d| d.join("dbcraft").join("connections.json"))
+    dirs::config_dir().map(|d| d.join("dbcraft"))
+}
+
+fn path() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("connections.json"))
+}
+
+/// App settings (`settings.json` in the config folder).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    /// Tell when a newer version is on GitHub.
+    pub update_check: bool,
+    /// Download and install it without asking (used from the next start).
+    pub update_auto: bool,
+    /// A version the user chose to skip.
+    pub update_skip: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { update_check: true, update_auto: false, update_skip: String::new() }
+    }
+}
+
+impl Settings {
+    pub fn load() -> Settings {
+        config_dir()
+            .and_then(|d| std::fs::read_to_string(d.join("settings.json")).ok())
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        let Some(dir) = config_dir() else { return };
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(text) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(dir.join("settings.json"), text);
+        }
+    }
 }
 
 pub fn load() -> Vec<ConnectionConfig> {

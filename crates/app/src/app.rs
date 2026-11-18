@@ -132,6 +132,7 @@ pub struct App {
     objects_kinds: Vec<ObjectKind>,
     actions: Vec<Action>,
     cli: crate::cli::Cli,
+    updater: crate::update_ui::Updater,
 }
 
 pub fn icon(kind: ObjectKind) -> Db {
@@ -200,6 +201,7 @@ impl App {
             objects_kinds: vec![ObjectKind::Table, ObjectKind::View],
             actions: Vec::new(),
             cli: cli_opts,
+            updater: crate::update_ui::Updater::new(),
         };
         if let Some(id) = cli_id {
             app.connect(&id);
@@ -630,6 +632,8 @@ impl App {
             {
                 self.actions.push(Action::Refresh(l));
             }
+            let upd = icons::tile(ui, Db::Update, "Aggiornamenti");
+            egui::Popup::menu(&upd).show(|ui| self.updater.menu(ui));
             let dark = ui.visuals().dark_mode;
             if icons::tile(ui, if dark { Db::Sun } else { Db::Moon }, if dark { "Tema chiaro" } else { "Tema scuro" }).clicked() {
                 ui.ctx().set_theme(if dark { egui::Theme::Light } else { egui::Theme::Dark });
@@ -1039,7 +1043,7 @@ impl StrongIf for RichText {
 }
 
 /// A small frameless × for tabs and notices.
-fn close_button(ui: &mut egui::Ui) -> egui::Response {
+pub fn close_button(ui: &mut egui::Ui) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(rect, 3.0, ui.visuals().widgets.hovered.weak_bg_fill);
@@ -1162,11 +1166,18 @@ impl eframe::App for App {
             return;
         }
 
+        self.updater.tick(&ctx);
+        for (text, error) in std::mem::take(&mut self.updater.notices) {
+            self.notify(text, error);
+        }
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.add_space(2.0);
             self.toolbar(ui);
             ui.add_space(2.0);
         });
+        if self.updater.banner(ui) && self.updater.restart() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         egui::Panel::bottom("status").exact_size(24.0).show(ui, |ui| self.status_bar(ui));
         egui::Panel::left("tree").resizable(true).default_size(250.0).min_size(160.0).show(ui, |ui| self.tree_ui(ui));
         egui::CentralPanel::default().show(ui, |ui| {

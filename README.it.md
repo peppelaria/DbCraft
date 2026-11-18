@@ -55,6 +55,19 @@ I pacchetti già compilati sono nella pagina [Releases](https://github.com/rmpao
 - **Windows 10/11 (x64)**: `dbcraft-<versione>-windows-x86_64.zip` (il runtime Visual C++ è
   incluso); SmartScreen potrebbe chiedere conferma.
 
+#### Aggiornamenti
+
+Una release installata chiede a GitHub, all'avvio e ogni 12 ore, se c'è una versione più nuova.
+Se c'è, una barra sotto la toolbar propone **Aggiorna** (scarica, controlla l'impronta SHA-256 con
+`SHA256SUMS.txt`, installa al posto di questa copia, poi **Riavvia ora**), **Novità** (note della
+release) e **Salta questa versione**. Su macOS l'app viene sostituita sul posto (la precedente
+resta nella cartella di configurazione, in `updates/`); su Linux la cartella del `.tar.gz` riceve i
+file nuovi e il `.deb` si installa con `pkexec dpkg -i`; su Windows un aiutante cambia i file
+quando chiudi l'app. Connessioni salvate, impostazioni e password nel portachiavi non vengono
+toccate. Il pulsante **Aggiornamenti** della toolbar controlla a mano e attiva o disattiva
+l'avviso e l'installazione automatica. Le build dai sorgenti non si aggiornano da sole
+(`git pull`); per provare la barra: `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`.
+
 ### Requisiti
 
 - [Rust](https://rustup.rs) **1.95+** (edition 2024)
