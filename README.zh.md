@@ -9,11 +9,13 @@ DbCraft 将专业数据库图形工具熟悉的「一个窗口管理所有数据
 已保存的连接、对象树、在大表上依然流畅的电子表格式数据网格、SQL 编辑器、可视化表设计器以及导入/导出，
 支持 **MySQL / MariaDB、PostgreSQL、SQL Server 和 SQLite**。
 
+它还内置了 **AI 助手**：用自然语言提问，它会读取数据库的结构和数据，编写并解释 SQL，在编辑器中打开查询，并且只有在你同意之后才会修改数据。支持本地模型（LM Studio、Ollama）和云服务（OpenAI、Claude、Gemini…）。
+
 *[English](README.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · 中文 · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
 ![DbCraft：MySQL 数据库的对象，以及菜单栏、工具栏和连接树](docs/screenshots/objects.png)
 
-> **状态：早期开发阶段（v0.1）。** 所有四种引擎都在真实服务器上通过了同一套端到端测试：
+> **状态：早期开发阶段（v0.2）。** 所有四种引擎都在真实服务器上通过了同一套端到端测试：
 > PostgreSQL 17、MySQL 8.4、MariaDB 11.4、SQL Server 2022 和 SQLite。
 > 在编辑生产数据库之前，请先备份你的数据。
 
@@ -50,6 +52,8 @@ DbCraft 将专业数据库图形工具熟悉的「一个窗口管理所有数据
 | ![数据库的 ER 图](docs/screenshots/model.png) | ![MySQL 服务器的用户及其权限](docs/screenshots/users.png) |
 | **备份** | **自动运行** |
 | ![数据库的备份](docs/screenshots/backup.png) | ![计划的备份和查询任务](docs/screenshots/automation.png) |
+| **AI 聊天** | **AI 设置** |
+| ![AI 聊天：助手读取了表结构，执行了查询，并在编辑器中打开了它](docs/screenshots/ai-chat.png) | ![AI 设置：按顺序尝试的代理、密钥、上下文，以及代理可以对数据库做什么](docs/screenshots/ai-settings.png) |
 
 ## 快速开始
 
@@ -128,7 +132,7 @@ URL 协议：`postgres://`、`mysql://`、`mariadb://`、`sqlserver://`（或 `m
 | `--query "<sql>"` | 打开一个包含此 SQL 的查询选项卡并运行 |
 | `--dark` | 以深色主题启动 |
 | `--lang <code>` | 本次运行的界面语言：`en`、`it`、`es`、`fr`、`de`、`uk`、`zh`、`ja`、`ko` |
-| `--open <tool>` | 数据库加载后打开某个工具：`users`、`backup`、`automation`、`model`、`queries`、`others:<kind>` |
+| `--open <tool>` | 数据库加载后打开某个工具：`users`、`backup`、`automation`、`model`、`queries`、`chat`、`ai-settings`、`others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | 打开新建连接对话框（`mysql`、`postgres`、…），可选择直接打开其 SSH 选项卡 |
 | `--screenshot <out.png> [--delay <s>]` | 在 `s` 秒后（默认 3 秒）将窗口保存为 PNG，然后退出。用于自动化界面检查。 |
 

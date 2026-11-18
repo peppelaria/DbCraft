@@ -11,11 +11,13 @@ tabellenkalkulationsähnliches Datenraster, das auch bei großen Tabellen flüss
 SQL-Editor, ein visueller Tabellendesigner sowie Import/Export, für **MySQL / MariaDB, PostgreSQL,
 SQL Server und SQLite**.
 
+Dazu kommt ein eingebauter **KI-Assistent**: Du fragst in eigenen Worten, und er liest Struktur und Daten deiner Datenbanken, schreibt und erklärt SQL, öffnet Abfragen im Editor und ändert Daten erst nach deinem Ja. Er arbeitet mit lokalen Modellen (LM Studio, Ollama) oder mit Cloud-Diensten (OpenAI, Claude, Gemini…).
+
 *[English](README.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · Deutsch · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
 ![DbCraft: die Objekte einer MySQL-Datenbank, mit Menüleiste, Symbolleiste und Verbindungsbaum](docs/screenshots/objects.png)
 
-> **Status: frühe Entwicklung (v0.1).** Alle vier Engines bestehen dieselbe End-to-End-Testsuite
+> **Status: frühe Entwicklung (v0.2).** Alle vier Engines bestehen dieselbe End-to-End-Testsuite
 > gegen echte Server: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 und SQLite.
 > Sichere deine Daten, bevor du Produktionsdatenbanken bearbeitest.
 
@@ -52,6 +54,8 @@ SQL Server und SQLite**.
 | ![ER-Diagramm einer Datenbank](docs/screenshots/model.png) | ![Benutzer eines MySQL-Servers mit ihren Privilegien](docs/screenshots/users.png) |
 | **Backup** | **Automatisierung** |
 | ![Backups einer Datenbank](docs/screenshots/backup.png) | ![Geplante Backup- und Abfrageaufgaben](docs/screenshots/automation.png) |
+| **KI-Chat** | **KI-Einstellungen** |
+| ![Der KI-Chat: der Assistent hat die Tabellen gelesen, eine Abfrage ausgeführt und sie im Editor geöffnet](docs/screenshots/ai-chat.png) | ![KI-Einstellungen: der Reihe nach versuchte Agenten, Schlüssel, Kontext und was der Agent mit den Datenbanken tun darf](docs/screenshots/ai-settings.png) |
 
 ## Erste Schritte
 
@@ -136,7 +140,7 @@ Um eine Verbindung anzulegen, klicke in der Symbolleiste auf **Verbindung** und 
 | `--query "<sql>"` | Einen Abfrage-Tab mit diesem SQL öffnen und ausführen |
 | `--dark` | Mit dem dunklen Design starten |
 | `--lang <code>` | Sprache der Oberfläche für diesen Start: `en`, `it`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
-| `--open <tool>` | Ein Werkzeug öffnen, sobald die Datenbank geladen ist: `users`, `backup`, `automation`, `model`, `queries`, `others:<kind>` |
+| `--open <tool>` | Ein Werkzeug öffnen, sobald die Datenbank geladen ist: `users`, `backup`, `automation`, `model`, `queries`, `chat`, `ai-settings`, `others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | Den Dialog für eine neue Verbindung öffnen (`mysql`, `postgres`, …), optional auf seinem SSH-Tab |
 | `--screenshot <out.png> [--delay <s>]` | Nach `s` Sekunden (Standard 3) ein PNG des Fensters speichern und beenden. Wird für automatische UI-Prüfungen verwendet. |
 

@@ -10,11 +10,13 @@ DbCraft는 전문 데이터베이스 GUI에서 익숙한 "하나의 창에서 �
 스프레드시트 형태의 데이터 그리드, SQL 편집기, 시각적 테이블 디자이너, 가져오기/내보내기를
 **MySQL / MariaDB, PostgreSQL, SQL Server, SQLite**에서 사용할 수 있습니다.
 
+**AI 어시스턴트**도 내장되어 있습니다. 평소 말로 물어보면 데이터베이스의 구조와 데이터를 읽고, SQL을 작성하고 설명하며, 쿼리를 편집기에서 열고, 데이터 변경은 사용자가 '예'라고 한 뒤에만 합니다. 로컬 모델(LM Studio, Ollama)과 클라우드 서비스(OpenAI, Claude, Gemini…) 모두에서 작동합니다.
+
 *[English](README.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · 한국어*
 
 ![DbCraft: 메뉴 막대, 도구 모음, 연결 트리와 함께 표시된 MySQL 데이터베이스의 개체](docs/screenshots/objects.png)
 
-> **상태: 초기 개발 단계 (v0.1).** 네 가지 엔진 모두 실제 서버를 대상으로 동일한 엔드투엔드
+> **상태: 초기 개발 단계 (v0.2).** 네 가지 엔진 모두 실제 서버를 대상으로 동일한 엔드투엔드
 > 테스트 모음을 통과합니다: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022, SQLite.
 > 운영 데이터베이스를 편집하기 전에 데이터를 백업하세요.
 
@@ -51,6 +53,8 @@ DbCraft는 전문 데이터베이스 GUI에서 익숙한 "하나의 창에서 �
 | ![데이터베이스의 ER 다이어그램](docs/screenshots/model.png) | ![MySQL 서버의 사용자와 권한](docs/screenshots/users.png) |
 | **백업** | **자동화** |
 | ![데이터베이스의 백업](docs/screenshots/backup.png) | ![예약된 백업 및 쿼리 작업](docs/screenshots/automation.png) |
+| **AI 채팅** | **AI 설정** |
+| ![AI 채팅: 어시스턴트가 테이블을 읽고 쿼리를 실행한 뒤 편집기에서 열었습니다](docs/screenshots/ai-chat.png) | ![AI 설정: 순서대로 시도하는 에이전트, 키, 컨텍스트, 에이전트가 데이터베이스에서 할 수 있는 일](docs/screenshots/ai-settings.png) |
 
 ## 시작하기
 
@@ -133,7 +137,7 @@ SSH 터널을 거치려면 `?ssh=user:password@ssh-host:port`를, 키 인증에�
 | `--query "<sql>"` | 이 SQL로 쿼리 탭을 열고 실행 |
 | `--dark` | 어두운 테마로 시작 |
 | `--lang <code>` | 이번 실행의 인터페이스 언어: `en`, `it`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
-| `--open <tool>` | 데이터베이스가 로드되면 도구 열기: `users`, `backup`, `automation`, `model`, `queries`, `others:<kind>` |
+| `--open <tool>` | 데이터베이스가 로드되면 도구 열기: `users`, `backup`, `automation`, `model`, `queries`, `chat`, `ai-settings`, `others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | 새 연결 대화 상자 열기(`mysql`, `postgres`, …), 선택적으로 SSH 탭에서 열기 |
 | `--screenshot <out.png> [--delay <s>]` | `s`초 후(기본값 3) 창의 PNG를 저장하고 종료. 자동화된 UI 검사에 사용됩니다. |
 

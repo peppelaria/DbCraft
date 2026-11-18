@@ -10,11 +10,13 @@ DbCraft は、プロ向けデータベース GUI でおなじみの「すべて�
 滑らかに動くスプレッドシート風のデータグリッド、SQL エディター、ビジュアルなテーブルデザイナー、
 インポート/エクスポートを、**MySQL / MariaDB、PostgreSQL、SQL Server、SQLite** に対応して提供します。
 
+**AI アシスタント**も内蔵しています。普段の言葉で質問すると、データベースの構造とデータを読み、SQL を書いて説明し、クエリをエディターで開き、データの変更はあなたの「はい」の後にだけ行います。ローカルモデル（LM Studio、Ollama）にもクラウドサービス（OpenAI、Claude、Gemini…）にも対応しています。
+
 *[English](README.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · 日本語 · [한국어](README.ko.md)*
 
 ![DbCraft: MySQL データベースのオブジェクト、メニューバー、ツールバー、接続ツリー](docs/screenshots/objects.png)
 
-> **ステータス: 初期開発段階 (v0.1)。** 4 つのエンジンすべてが、実際のサーバーに対して同じエンドツーエンドの
+> **ステータス: 初期開発段階 (v0.2)。** 4 つのエンジンすべてが、実際のサーバーに対して同じエンドツーエンドの
 > テストスイートに合格しています: PostgreSQL 17、MySQL 8.4、MariaDB 11.4、SQL Server 2022、SQLite。
 > 本番データベースを編集する前に、データをバックアップしてください。
 
@@ -51,6 +53,8 @@ DbCraft は、プロ向けデータベース GUI でおなじみの「すべて�
 | ![データベースの ER 図](docs/screenshots/model.png) | ![MySQL サーバーのユーザーとその権限](docs/screenshots/users.png) |
 | **バックアップ** | **自動化** |
 | ![データベースのバックアップ](docs/screenshots/backup.png) | ![スケジュールされたバックアップとクエリのタスク](docs/screenshots/automation.png) |
+| **AI チャット** | **AI 設定** |
+| ![AI チャット: アシスタントがテーブルを読み、クエリを実行してエディターで開いたところ](docs/screenshots/ai-chat.png) | ![AI 設定: 順番に試すエージェント、キー、コンテキスト、エージェントがデータベースでできること](docs/screenshots/ai-settings.png) |
 
 ## はじめに
 
@@ -133,7 +137,7 @@ SSH トンネルを経由するには `?ssh=user:password@ssh-host:port` を、�
 | `--query "<sql>"` | この SQL でクエリタブを開いて実行する |
 | `--dark` | ダークテーマで起動する |
 | `--lang <code>` | この実行でのインターフェース言語: `en`、`it`、`es`、`fr`、`de`、`uk`、`zh`、`ja`、`ko` |
-| `--open <tool>` | データベースの読み込み後にツールを開く: `users`、`backup`、`automation`、`model`、`queries`、`others:<kind>` |
+| `--open <tool>` | データベースの読み込み後にツールを開く: `users`、`backup`、`automation`、`model`、`queries`、`chat`、`ai-settings`、`others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | 新規接続ダイアログ (`mysql`、`postgres`、…) を開く。必要に応じて SSH タブで開く |
 | `--screenshot <out.png> [--delay <s>]` | `s` 秒後 (デフォルト 3) にウィンドウの PNG を保存して終了する。UI の自動チェックに使用。 |
 

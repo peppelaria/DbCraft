@@ -1727,6 +1727,8 @@ impl App {
                     self.active = 0;
                 }
                 "about" => self.show_about = true,
+                "chat" => self.chat_open = true,
+                "ai-settings" => self.open_ai_settings(),
                 other => {
                     if let Some(k) = other.strip_prefix("others:") {
                         let kind = [CatalogKind::Indexes, CatalogKind::Sequences, CatalogKind::Events, CatalogKind::Types, CatalogKind::Extensions, CatalogKind::Synonyms]

@@ -10,11 +10,13 @@ DbCraft porta in un'app nativa e leggera il flusso di lavoro dei client database
 dati in stile foglio di calcolo che resta fluida anche su tabelle grandi, editor SQL, designer
 visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Server e SQLite**.
 
+Ha anche un **assistente AI** integrato: gli chiedi le cose a parole e lui legge la struttura e i dati dei tuoi database, scrive e spiega l'SQL, apre le query nell'editor e modifica i dati solo dopo il tuo sì. Funziona con modelli locali (LM Studio, Ollama) o con servizi nel cloud (OpenAI, Claude, Gemini…).
+
 *[English](README.md) · Italiano · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
 ![DbCraft: gli oggetti di un database MySQL, con la barra dei menu, la toolbar e l'albero delle connessioni](docs/screenshots/objects.png)
 
-> **Stato: sviluppo iniziale (v0.1).** Tutti i motori superano la stessa suite di test
+> **Stato: sviluppo iniziale (v0.2).** Tutti i motori superano la stessa suite di test
 > end-to-end su server reali: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 e SQLite.
 > Fai un backup prima di modificare database di produzione.
 
@@ -51,6 +53,8 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 | ![Diagramma ER di un database](docs/screenshots/model.png) | ![Utenti di un server MySQL con i loro privilegi](docs/screenshots/users.png) |
 | **Backup** | **Automazione** |
 | ![Backup di un database](docs/screenshots/backup.png) | ![Attività pianificate di backup e query](docs/screenshots/automation.png) |
+| **Chat AI** | **Impostazioni AI** |
+| ![La chat AI: l'assistente ha letto le tabelle, eseguito una query e l'ha aperta nell'editor](docs/screenshots/ai-chat.png) | ![Impostazioni AI: agenti provati in ordine, chiavi, contesto e cosa può fare l'agente con i database](docs/screenshots/ai-settings.png) |
 
 Gli screenshot mostrano l'interfaccia in inglese; in italiano si sceglie da **View › Language** (o
 è già così se il sistema è in italiano).
@@ -138,7 +142,7 @@ Per creare una connessione, clicca **Connessione** nella barra in alto e scegli 
 | `--query "<sql>"` | Apre un tab query con questo SQL e lo esegue |
 | `--dark` | Avvia con il tema scuro |
 | `--lang <codice>` | Lingua dell'interfaccia per questo avvio: `it`, `en`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
-| `--open <strumento>` | Apre uno strumento quando il database è caricato: `users`, `backup`, `automation`, `model`, `queries`, `others:<tipo>` |
+| `--open <strumento>` | Apre uno strumento quando il database è caricato: `users`, `backup`, `automation`, `model`, `queries`, `chat`, `ai-settings`, `others:<tipo>` |
 | `--new-connection <tipo> [--ssh-tab]` | Apre il dialogo di nuova connessione (`mysql`, `postgres`, …), eventualmente sulla scheda SSH |
 | `--screenshot <out.png> [--delay <s>]` | Salva un PNG della finestra dopo `s` secondi (predefinito 3), poi esce. Serve per le verifiche automatiche dell'interfaccia. |
 

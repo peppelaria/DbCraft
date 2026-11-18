@@ -10,11 +10,13 @@ database GUIs to a lightweight native app: saved connections, an object tree, a 
 data grid that stays smooth on large tables, a SQL editor, a visual table designer, and
 import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 
+It also has a built-in **AI assistant**: ask in plain language and it reads the structure and data of your databases, writes and explains SQL, opens queries in the editor and changes data only after your yes. It works with local models (LM Studio, Ollama) or with cloud services (OpenAI, Claude, Gemini…).
+
 *English · [Italiano](README.it.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
 ![DbCraft: the objects of a MySQL database, with the menu bar, the toolbar and the connection tree](docs/screenshots/objects.png)
 
-> **Status: early development (v0.1).** All four engines pass the same end-to-end test suite
+> **Status: early development (v0.2).** All four engines pass the same end-to-end test suite
 > against real servers: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 and SQLite.
 > Back up your data before you edit production databases.
 
@@ -51,6 +53,8 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 | ![ER diagram of a database](docs/screenshots/model.png) | ![Users of a MySQL server with their privileges](docs/screenshots/users.png) |
 | **Backup** | **Automation** |
 | ![Backups of a database](docs/screenshots/backup.png) | ![Scheduled backup and query jobs](docs/screenshots/automation.png) |
+| **AI chat** | **AI settings** |
+| ![The AI chat: the assistant read the tables, ran a query and opened it in the editor](docs/screenshots/ai-chat.png) | ![AI settings: agents tried in order, keys, context and what the agent may do with the databases](docs/screenshots/ai-settings.png) |
 
 ## Getting started
 
@@ -134,7 +138,7 @@ To create a connection, click **Connection** in the toolbar and pick the databas
 | `--query "<sql>"` | Open a query tab with this SQL and run it |
 | `--dark` | Start with the dark theme |
 | `--lang <code>` | Interface language for this run: `en`, `it`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
-| `--open <tool>` | Open a tool once the database is loaded: `users`, `backup`, `automation`, `model`, `queries`, `others:<kind>` |
+| `--open <tool>` | Open a tool once the database is loaded: `users`, `backup`, `automation`, `model`, `queries`, `chat`, `ai-settings`, `others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | Open the new-connection dialog (`mysql`, `postgres`, …), optionally on its SSH tab |
 | `--screenshot <out.png> [--delay <s>]` | Save a PNG of the window after `s` seconds (default 3), then quit. Used for automated UI checks. |
 

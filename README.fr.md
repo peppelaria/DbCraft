@@ -11,11 +11,13 @@ enregistrées, arborescence des objets, grille de données de type tableur qui r
 grandes tables, éditeur SQL, concepteur visuel de tables et import/export, pour
 **MySQL / MariaDB, PostgreSQL, SQL Server et SQLite**.
 
+Il intègre aussi un **assistant IA** : vous lui posez vos questions avec vos mots, et il lit la structure et les données de vos bases, écrit et explique le SQL, ouvre les requêtes dans l'éditeur et ne modifie les données qu'après votre oui. Il fonctionne avec des modèles locaux (LM Studio, Ollama) ou des services dans le cloud (OpenAI, Claude, Gemini…).
+
 *[English](README.md) · [Italiano](README.it.md) · [Español](README.es.md) · Français · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
 ![DbCraft : les objets d'une base de données MySQL, avec la barre de menus, la barre d'outils et l'arborescence des connexions](docs/screenshots/objects.png)
 
-> **État : développement précoce (v0.1).** Les quatre moteurs passent la même suite de tests de
+> **État : développement précoce (v0.2).** Les quatre moteurs passent la même suite de tests de
 > bout en bout sur de vrais serveurs : PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 et SQLite.
 > Sauvegardez vos données avant de modifier des bases de production.
 
@@ -52,6 +54,8 @@ grandes tables, éditeur SQL, concepteur visuel de tables et import/export, pour
 | ![Diagramme ER d'une base de données](docs/screenshots/model.png) | ![Utilisateurs d'un serveur MySQL avec leurs privilèges](docs/screenshots/users.png) |
 | **Sauvegarde** | **Automatisation** |
 | ![Sauvegardes d'une base de données](docs/screenshots/backup.png) | ![Tâches planifiées de sauvegarde et de requête](docs/screenshots/automation.png) |
+| **Chat IA** | **Réglages IA** |
+| ![Le chat IA : l'assistant a lu les tables, exécuté une requête et l'a ouverte dans l'éditeur](docs/screenshots/ai-chat.png) | ![Réglages IA : agents essayés dans l'ordre, clés, contexte et ce que l'agent peut faire avec les bases](docs/screenshots/ai-settings.png) |
 
 ## Prise en main
 
@@ -136,7 +140,7 @@ Pour créer une connexion, cliquez sur **Connexion** dans la barre d'outils et c
 | `--query "<sql>"` | Ouvre un onglet de requête avec ce SQL et l'exécute |
 | `--dark` | Démarre avec le thème sombre |
 | `--lang <code>` | Langue de l'interface pour cette exécution : `en`, `it`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
-| `--open <tool>` | Ouvre un outil une fois la base de données chargée : `users`, `backup`, `automation`, `model`, `queries`, `others:<kind>` |
+| `--open <tool>` | Ouvre un outil une fois la base de données chargée : `users`, `backup`, `automation`, `model`, `queries`, `chat`, `ai-settings`, `others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | Ouvre la boîte de dialogue de nouvelle connexion (`mysql`, `postgres`, …), éventuellement sur son onglet SSH |
 | `--screenshot <out.png> [--delay <s>]` | Enregistre un PNG de la fenêtre après `s` secondes (3 par défaut), puis quitte. Utilisé pour les vérifications automatiques de l'interface. |
 

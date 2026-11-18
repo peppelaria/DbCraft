@@ -148,7 +148,7 @@ const SAVED_HEADER: &str = "# Agenti AI di DbCraft: si modificano comodamente da
 ";
 
 /// Istruzioni della chat di DbCraft.
-pub const CHAT_PROMPT: &str = r#"Sei l'assistente AI di DbCraft, un client per database (MySQL, MariaDB, PostgreSQL, SQL Server, SQLite). Aiuti l'utente a scrivere, spiegare, correggere e ottimizzare query SQL e a capire i suoi database: struttura, relazioni, dati, indici, prestazioni. Rispondi nella lingua in cui ti scrive l'utente, in Markdown. Scrivi il codice SQL in blocchi ```sql, nel dialetto del database di cui si parla. Quando serve conoscere tabelle, colonne o dati, usali con gli strumenti invece di indovinare. Non inventare nomi di tabelle o colonne."#;
+pub const CHAT_PROMPT: &str = r#"Sei l'assistente AI di DbCraft, un client per database (MySQL, MariaDB, PostgreSQL, SQL Server, SQLite). Aiuti l'utente a scrivere, spiegare, correggere e ottimizzare query SQL e a capire i suoi database: struttura, relazioni, dati, indici, prestazioni. Rispondi sempre nella lingua dell'ultimo messaggio dell'utente, in Markdown, anche se queste istruzioni e i risultati degli strumenti sono in italiano. Scrivi il codice SQL in blocchi ```sql, nel dialetto del database di cui si parla. Quando serve conoscere tabelle, colonne o dati, usali con gli strumenti invece di indovinare. Non inventare nomi di tabelle o colonne."#;
 
 // ---------------------------------------------------------------------------
 // Configurazione

@@ -10,11 +10,13 @@ interfaces gráficas profesionales a una aplicación nativa y ligera: conexiones
 una cuadrícula de datos al estilo de una hoja de cálculo que sigue siendo fluida con tablas grandes, un editor SQL,
 un diseñador visual de tablas e importación/exportación, para **MySQL / MariaDB, PostgreSQL, SQL Server y SQLite**.
 
+También incluye un **asistente de IA**: le preguntas con tus palabras y lee la estructura y los datos de tus bases de datos, escribe y explica SQL, abre las consultas en el editor y solo modifica datos después de tu sí. Funciona con modelos locales (LM Studio, Ollama) o con servicios en la nube (OpenAI, Claude, Gemini…).
+
 *[English](README.md) · [Italiano](README.it.md) · Español · [Français](README.fr.md) · [Deutsch](README.de.md) · [Українська](README.uk.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md)*
 
 ![DbCraft: los objetos de una base de datos MySQL, con la barra de menús, la barra de herramientas y el árbol de conexiones](docs/screenshots/objects.png)
 
-> **Estado: desarrollo inicial (v0.1).** Los cuatro motores superan el mismo conjunto de pruebas de extremo a extremo
+> **Estado: desarrollo inicial (v0.2).** Los cuatro motores superan el mismo conjunto de pruebas de extremo a extremo
 > contra servidores reales: PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 y SQLite.
 > Haz una copia de seguridad de tus datos antes de editar bases de datos de producción.
 
@@ -51,6 +53,8 @@ un diseñador visual de tablas e importación/exportación, para **MySQL / Maria
 | ![Diagrama ER de una base de datos](docs/screenshots/model.png) | ![Usuarios de un servidor MySQL con sus privilegios](docs/screenshots/users.png) |
 | **Backup** | **Automatización** |
 | ![Backups de una base de datos](docs/screenshots/backup.png) | ![Tareas programadas de backup y de consulta](docs/screenshots/automation.png) |
+| **Chat de IA** | **Ajustes de IA** |
+| ![El chat de IA: el asistente leyó las tablas, ejecutó una consulta y la abrió en el editor](docs/screenshots/ai-chat.png) | ![Ajustes de IA: agentes probados en orden, claves, contexto y lo que el agente puede hacer con las bases de datos](docs/screenshots/ai-settings.png) |
 
 ## Primeros pasos
 
@@ -133,7 +137,7 @@ Para crear una conexión, haz clic en **Conexión** en la barra de herramientas 
 | `--query "<sql>"` | Abre una pestaña de consulta con este SQL y lo ejecuta |
 | `--dark` | Inicia con el tema oscuro |
 | `--lang <code>` | Idioma de la interfaz para esta ejecución: `en`, `it`, `es`, `fr`, `de`, `uk`, `zh`, `ja`, `ko` |
-| `--open <tool>` | Abre una herramienta una vez cargada la base de datos: `users`, `backup`, `automation`, `model`, `queries`, `others:<kind>` |
+| `--open <tool>` | Abre una herramienta una vez cargada la base de datos: `users`, `backup`, `automation`, `model`, `queries`, `chat`, `ai-settings`, `others:<kind>` |
 | `--new-connection <kind> [--ssh-tab]` | Abre el diálogo de nueva conexión (`mysql`, `postgres`, …), opcionalmente en su pestaña SSH |
 | `--screenshot <out.png> [--delay <s>]` | Guarda un PNG de la ventana tras `s` segundos (3 por defecto) y sale. Se usa para comprobaciones automáticas de la interfaz. |
 
