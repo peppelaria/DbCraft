@@ -40,6 +40,7 @@ import/export, for **MySQL / MariaDB, PostgreSQL, SQL Server and SQLite**.
 | **Table designer** | Fields (name, type, not-null, key, auto-increment, default, comment), indexes and foreign keys, with a live **SQL preview** of the `CREATE TABLE` / `ALTER TABLE` statements for the connection's dialect. On SQLite, changes it can't express with `ALTER` are applied by rebuilding the table, keeping its data. |
 | **Export** | Tables, views or query results to CSV, JSON, SQL `INSERT` script or Excel (`.xlsx`). |
 | **Import** | CSV with a configurable delimiter and header row, a field-mapping preview, and optional empty-cell → NULL. Rows are inserted in batches inside transactions. |
+| **AI chat** | An AI assistant in a panel on the right (**Chat AI** in the toolbar), the same as OpenSlate's: it writes, explains, fixes and optimises SQL, and works on your databases with tools. It sees the configured connections, reads structure and data (read-only queries), opens queries in a new editor tab, and makes changes only after your **yes** in the chat. Any OpenAI-compatible service (LM Studio, Ollama, OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter…), tried in order with fallback; saved conversations, Markdown and formulas, a context meter with automatic compaction, and **AI settings** (agents, keys in the keychain, test, models, context). |
 | **Languages** | The interface speaks **English, Italiano, Español, Français, Deutsch, Українська, 中文, 日本語 and 한국어**: the system language by default, or the one chosen in **View › Language** (it applies at once). Chinese, Japanese and Korean use a font of the system. |
 | **UI** | Light and dark themes. |
 
@@ -78,11 +79,34 @@ closes. Saved connections, settings and keychain passwords are not touched. The 
 Builds from source do not update themselves (`git pull`); to try the bar anyway, run with
 `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`.
 
+#### AI assistant
+
+**Chat AI** in the toolbar (or Tools › Chat AI) opens the chat on the right; **Tools › AI settings** opens
+its settings. Both are the pages of [OpenSlate](https://github.com/rmpaolillo/OpenSlate), with the same
+logic: the agents are tried **in order**, and if one does not answer (server off, no key, error) the
+next one does. They live in `ai.toml` in the config folder; a key is never written there in clear:
+`keychain:NAME` (a key typed in the settings page goes to the OS keychain), `env:NAME` or
+`dsh:NAME` (DeepSeek Harness).
+
+The chat knows which database is selected in DbCraft, and it has tools:
+
+| Tool | What it does |
+|---|---|
+| `db_connections`, `db_databases`, `db_tables`, `db_describe` | the configured connections and the structure of their databases |
+| `db_query` | runs **read-only** SQL (SELECT, WITH, SHOW, EXPLAIN…), at most `max_rows` rows |
+| `db_open_query` | opens a query in a new editor tab, without running it |
+| `db_execute` | changes data or structure: first it only prepares the change and you see the exact SQL, then it runs **only after your yes** in the next message (and only if *AI settings › The database* allows changes) |
+
+Every SQL block in an answer has **Open in editor** and **Copy**. With a local model (LM Studio,
+Ollama) nothing leaves your computer; with a cloud service, the questions and the data the AI reads
+go to that service.
+
 ### Requirements
 
 - [Rust](https://rustup.rs) **1.95+** (edition 2024)
 - macOS, Windows or Linux. Linux needs the usual development packages for a desktop window
-  (X11/Wayland, `libxkbcommon`) and D-Bus for the keychain.
+  (X11/Wayland, `libxkbcommon`), D-Bus for the keychain and WebKitGTK 4.1 for the AI chat
+  (`libwebkit2gtk-4.1-dev`).
 
 ### Build and run
 
@@ -206,6 +230,7 @@ crates/
 - [x] Custom vector icon set
 - [x] Interface in nine languages
 - [x] ER diagram, backup/restore, scheduled jobs, users and privileges
+- [x] AI chat for queries and databases (as in OpenSlate)
 - [ ] Data and structure sync, BI
 - [ ] More engines (Oracle, MongoDB, Redis)
 
@@ -237,7 +262,11 @@ DbCraft is built on the work of many open-source projects. Thank you!
 - **[sys-locale](https://github.com/1Password/sys-locale)**: the system language.
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1): a tiny subset for the
   language names 中文 日本語 한국어 in the menu, as in OpenSlate.
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: the translation system and the self-update.
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: the translation system, the self-update and the AI
+  chat (its pages, the provider chain and the settings).
+- **[wry](https://github.com/tauri-apps/wry)**: the WebViews of the AI chat inside the window.
+- **[KaTeX](https://katex.org)**, **[marked](https://marked.js.org)**, **[DOMPurify](https://github.com/cure53/DOMPurify)**
+  and the **[Inter](https://rsms.me/inter/)** font, bundled for the chat pages (see `crates/app/web/vendor`).
 
 The full list of third-party components and their licences is in [CREDITS.md](CREDITS.md).
 

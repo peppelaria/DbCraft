@@ -41,6 +41,7 @@ SQL Server und SQLite**.
 | **Tabellendesigner** | Felder (Name, Typ, Not null, Schlüssel, Auto-Inkrement, Standardwert, Kommentar), Indizes und Fremdschlüssel, mit einer Live-**SQL-Vorschau** der `CREATE TABLE`- / `ALTER TABLE`-Anweisungen im Dialekt der Verbindung. Bei SQLite werden Änderungen, die sich nicht mit `ALTER` ausdrücken lassen, durch Neuaufbau der Tabelle angewendet, wobei ihre Daten erhalten bleiben. |
 | **Export** | Tabellen, Ansichten oder Abfrageergebnisse als CSV, JSON, SQL-`INSERT`-Skript oder Excel (`.xlsx`). |
 | **Import** | CSV mit einstellbarem Trennzeichen und Kopfzeile, einer Vorschau der Feldzuordnung und optional leere Zelle → NULL. Zeilen werden stapelweise innerhalb von Transaktionen eingefügt. |
+| **KI-Chat** | Ein KI-Assistent in einem Bereich rechts (**KI-Chat** in der Symbolleiste), derselbe wie in OpenSlate: Er schreibt, erklärt, korrigiert und optimiert SQL und arbeitet mit Werkzeugen an deinen Datenbanken. Er sieht die eingerichteten Verbindungen, liest Struktur und Daten (Abfragen nur lesend), öffnet Abfragen in einem neuen Editor-Tab und nimmt Änderungen erst nach deinem **Ja** im Chat vor. Jeder OpenAI-kompatible Dienst (LM Studio, Ollama, OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter…), der Reihe nach probiert mit Ausweichen auf den nächsten; gespeicherte Unterhaltungen, Markdown und Formeln, eine Kontextanzeige mit automatischer Komprimierung und **KI-Einstellungen** (Agenten, Schlüssel im Schlüsselbund, Test, Modelle, Kontext). |
 | **Sprachen** | Die Oberfläche spricht **English, Italiano, Español, Français, Deutsch, Українська, 中文, 日本語 und 한국어**: standardmäßig die Systemsprache oder die unter **Ansicht › Sprache** gewählte (wirkt sofort). Chinesisch, Japanisch und Koreanisch verwenden eine Schrift des Systems. |
 | **Oberfläche** | Helles und dunkles Design. |
 
@@ -80,6 +81,28 @@ Passwörter im Schlüsselbund bleiben unberührt. Die Schaltfläche **Updates** 
 prüft von Hand und schaltet die Benachrichtigung oder die automatische Installation ein und aus.
 Aus dem Quellcode kompilierte Builds aktualisieren sich nicht selbst (`git pull`); um die Leiste
 trotzdem auszuprobieren, starte mit `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`.
+
+#### KI-Assistent
+
+**KI-Chat** in der Symbolleiste (oder Werkzeuge › KI-Chat) öffnet den Chat rechts; **Werkzeuge › KI-Einstellungen** öffnet
+seine Einstellungen. Beides sind die Seiten von [OpenSlate](https://github.com/rmpaolillo/OpenSlate), mit derselben
+Logik: Die Agenten werden **der Reihe nach** probiert, und wenn einer nicht antwortet (Server aus, kein Schlüssel, Fehler),
+antwortet der nächste. Sie stehen in `ai.toml` im Konfigurationsordner; ein Schlüssel wird dort nie im Klartext gespeichert:
+`keychain:NAME` (ein auf der Einstellungsseite eingegebener Schlüssel kommt in den Schlüsselbund des Betriebssystems),
+`env:NAME` oder `dsh:NAME` (DeepSeek Harness).
+
+Der Chat weiß, welche Datenbank in DbCraft ausgewählt ist, und hat Werkzeuge:
+
+| Werkzeug | Was es tut |
+|---|---|
+| `db_connections`, `db_databases`, `db_tables`, `db_describe` | die eingerichteten Verbindungen und die Struktur ihrer Datenbanken |
+| `db_query` | führt SQL **nur lesend** aus (SELECT, WITH, SHOW, EXPLAIN…), höchstens `max_rows` Zeilen |
+| `db_open_query` | öffnet eine Abfrage in einem neuen Editor-Tab, ohne sie auszuführen |
+| `db_execute` | ändert Daten oder Struktur: Zuerst bereitet es die Änderung nur vor und du siehst das genaue SQL, dann führt es sie **erst nach deinem Ja** in der nächsten Nachricht aus (und nur, wenn *KI-Einstellungen › Die Datenbank* Änderungen erlaubt) |
+
+Jeder SQL-Block in einer Antwort hat **Im Editor öffnen** und **Kopieren**. Mit einem lokalen Modell (LM Studio,
+Ollama) verlässt nichts deinen Computer; mit einem Cloud-Dienst gehen die Fragen und die Daten, die die KI liest,
+an diesen Dienst.
 
 ### Voraussetzungen
 
@@ -212,6 +235,7 @@ crates/
 - [x] Eigener Satz von Vektorsymbolen
 - [x] Oberfläche in neun Sprachen
 - [x] ER-Diagramm, Backup/Wiederherstellung, geplante Aufgaben, Benutzer und Privilegien
+- [x] KI-Chat für Abfragen und Datenbanken (wie in OpenSlate)
 - [ ] Daten- und Struktursynchronisation, BI
 - [ ] Weitere Engines (Oracle, MongoDB, Redis)
 
@@ -244,7 +268,11 @@ DbCraft baut auf der Arbeit vieler Open-Source-Projekte auf. Vielen Dank!
 - **[sys-locale](https://github.com/1Password/sys-locale)**: die Systemsprache.
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1): eine winzige Teilmenge
   für die Sprachnamen 中文 日本語 한국어 im Menü, wie in OpenSlate.
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: das Übersetzungssystem und die Selbstaktualisierung.
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: das Übersetzungssystem, die Selbstaktualisierung und der
+  KI-Chat (seine Seiten, die Anbieterkette und die Einstellungen).
+- **[wry](https://github.com/tauri-apps/wry)**: die WebViews des KI-Chats im Fenster.
+- **[KaTeX](https://katex.org)**, **[marked](https://marked.js.org)**, **[DOMPurify](https://github.com/cure53/DOMPurify)**
+  und die Schrift **[Inter](https://rsms.me/inter/)**, mitgeliefert für die Chat-Seiten (siehe `crates/app/web/vendor`).
 
 Die vollständige Liste der Drittkomponenten und ihrer Lizenzen steht in [CREDITS.md](CREDITS.md).
 

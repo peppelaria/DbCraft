@@ -40,6 +40,7 @@ visuale delle tabelle e import/export, per **MySQL / MariaDB, PostgreSQL, SQL Se
 | **Designer tabelle** | Campi (nome, tipo, non null, chiave, auto-incremento, predefinito, commento), indici e chiavi esterne, con **anteprima SQL** in tempo reale delle istruzioni `CREATE TABLE` / `ALTER TABLE` nel dialetto della connessione. Su SQLite, le modifiche non esprimibili con `ALTER` vengono applicate ricostruendo la tabella, senza perdere i dati. |
 | **Esportazione** | Tabelle, viste o risultati di query in CSV, JSON, script SQL `INSERT` o Excel (`.xlsx`). |
 | **Importazione** | CSV con delimitatore e riga di intestazione configurabili, anteprima e associazione dei campi, opzione "cella vuota = NULL". Le righe vengono inserite a blocchi dentro transazioni. |
+| **Chat AI** | Un assistente AI in un riquadro a destra (**Chat AI** nella toolbar), lo stesso di OpenSlate: scrive, spiega, corregge e ottimizza l'SQL e lavora sui tuoi database con degli strumenti. Vede le connessioni configurate, legge struttura e dati (query di sola lettura), apre le query in una nuova scheda dell'editor e fa modifiche solo dopo il tuo **sì** in chat. Qualsiasi servizio compatibile OpenAI (LM Studio, Ollama, OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter…), provati in ordine con riserva; conversazioni salvate, Markdown e formule, indicatore del contesto con compattazione automatica e **Impostazioni AI** (agenti, chiavi nel Portachiavi, prova, modelli, contesto). |
 | **Lingue** | L'interfaccia parla **English, Italiano, Español, Français, Deutsch, Українська, 中文, 日本語 e 한국어**: quella del sistema, oppure quella scelta in **Visualizza › Lingua** (vale subito). Cinese, giapponese e coreano usano un carattere del sistema. |
 | **Interfaccia** | Tema chiaro e scuro. |
 
@@ -82,11 +83,34 @@ toccate. Il pulsante **Aggiornamenti** della toolbar controlla a mano e attiva o
 l'avviso e l'installazione automatica. Le build dai sorgenti non si aggiornano da sole
 (`git pull`); per provare la barra: `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`.
 
+#### Assistente AI
+
+**Chat AI** nella toolbar (o Strumenti › Chat AI) apre la chat a destra; **Strumenti › Impostazioni AI**
+apre le sue impostazioni. Sono le pagine di [OpenSlate](https://github.com/rmpaolillo/OpenSlate), con la
+stessa logica: gli agenti si provano **in ordine** e se uno non risponde (server spento, chiave mancante,
+errore) passa al successivo. Stanno in `ai.toml` nella cartella di configurazione; una chiave non ci
+finisce mai in chiaro: `keychain:NOME` (una chiave scritta nella pagina delle impostazioni va nel
+Portachiavi del sistema), `env:NOME` o `dsh:NOME` (DeepSeek Harness).
+
+La chat sa qual è il database selezionato in DbCraft e ha degli strumenti:
+
+| Strumento | Cosa fa |
+|---|---|
+| `db_connections`, `db_databases`, `db_tables`, `db_describe` | le connessioni configurate e la struttura dei loro database |
+| `db_query` | esegue SQL **di sola lettura** (SELECT, WITH, SHOW, EXPLAIN…), al massimo `max_rows` righe |
+| `db_open_query` | apre una query in una nuova scheda dell'editor, senza eseguirla |
+| `db_execute` | modifica dati o struttura: prima prepara soltanto la modifica e tu vedi l'SQL esatto, poi la esegue **solo dopo il tuo sì** nel messaggio successivo (e solo se *Impostazioni AI › Il database* permette le modifiche) |
+
+Ogni blocco SQL di una risposta ha **Apri nell'editor** e **Copia**. Con un modello locale (LM Studio,
+Ollama) non esce niente dal computer; con un servizio nel cloud, le domande e i dati letti dall'AI vanno
+a quel servizio.
+
 ### Requisiti
 
 - [Rust](https://rustup.rs) **1.95+** (edition 2024)
 - macOS, Windows o Linux. Su Linux servono i pacchetti di sviluppo per le finestre desktop
-  (X11/Wayland, `libxkbcommon`) e D-Bus per il portachiavi.
+  (X11/Wayland, `libxkbcommon`), D-Bus per il portachiavi e WebKitGTK 4.1 per la chat AI
+  (`libwebkit2gtk-4.1-dev`).
 
 ### Compilare ed eseguire
 
@@ -212,6 +236,7 @@ crates/
 - [x] Set di icone vettoriali proprio
 - [x] Interfaccia in nove lingue
 - [x] Diagramma ER, backup/ripristino, attività pianificate, utenti e privilegi
+- [x] Chat AI per query e database (come in OpenSlate)
 - [ ] Sincronizzazione di dati e struttura, BI
 - [ ] Altri motori (Oracle, MongoDB, Redis)
 
@@ -245,7 +270,11 @@ DbCraft si basa sul lavoro di molti progetti open source. Grazie!
 - **[sys-locale](https://github.com/1Password/sys-locale)**: la lingua del sistema.
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1): un ritaglio minuscolo per
   i nomi delle lingue 中文 日本語 한국어 nel menu, come in OpenSlate.
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: il sistema delle traduzioni e l'aggiornamento automatico.
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: il sistema delle traduzioni, l'aggiornamento automatico e la
+  chat AI (le sue pagine, la catena dei provider e le impostazioni).
+- **[wry](https://github.com/tauri-apps/wry)**: le WebView della chat AI dentro la finestra.
+- **[KaTeX](https://katex.org)**, **[marked](https://marked.js.org)**, **[DOMPurify](https://github.com/cure53/DOMPurify)**
+  e il carattere **[Inter](https://rsms.me/inter/)**, inclusi per le pagine della chat (vedi `crates/app/web/vendor`).
 
 L'elenco completo dei componenti di terze parti e delle loro licenze è in [CREDITS.md](CREDITS.md).
 

@@ -40,6 +40,7 @@ DbCraft는 전문 데이터베이스 GUI에서 익숙한 "하나의 창에서 �
 | **테이블 디자이너** | 필드(이름, 유형, not-null, 키, 자동 증가, 기본값, 주석), 인덱스, 외래 키. 연결의 방언에 맞는 `CREATE TABLE` / `ALTER TABLE` 문을 실시간 **SQL 미리 보기**로 표시합니다. SQLite에서는 `ALTER`로 표현할 수 없는 변경을 데이터를 유지한 채 테이블을 재구성하여 적용합니다. |
 | **내보내기** | 테이블, 뷰, 쿼리 결과를 CSV, JSON, SQL `INSERT` 스크립트 또는 Excel(`.xlsx`)로 내보냅니다. |
 | **가져오기** | 구분자와 머리글 행을 설정할 수 있는 CSV, 필드 매핑 미리 보기, 선택적인 빈 셀 → NULL 변환. 행은 트랜잭션 안에서 일괄 삽입됩니다. |
+| **AI 채팅** | 오른쪽 패널의 AI 어시스턴트(도구 모음의 **AI 채팅**)로, OpenSlate의 것과 같습니다: SQL을 작성, 설명, 수정, 최적화하고 도구를 사용해 데이터베이스에서 작업합니다. 설정된 연결을 보고, 구조와 데이터를 읽고(읽기 전용 쿼리), 새 편집기 탭에서 쿼리를 열며, 변경은 채팅에서 **예**라고 답한 뒤에만 수행합니다. OpenAI 호환 서비스(LM Studio, Ollama, OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter…)라면 무엇이든 사용할 수 있으며, 순서대로 시도하고 실패하면 다음으로 넘어갑니다. 대화 저장, Markdown과 수식, 자동 압축 기능이 있는 컨텍스트 미터, **AI 설정**(에이전트, 키체인의 키, 테스트, 모델, 컨텍스트)을 제공합니다. |
 | **언어** | 인터페이스는 **English, Italiano, Español, Français, Deutsch, Українська, 中文, 日本語, 한국어**를 지원합니다. 기본값은 시스템 언어이며, **보기 › 언어**에서 선택할 수 있습니다(즉시 적용). 중국어, 일본어, 한국어는 시스템 글꼴을 사용합니다. |
 | **UI** | 밝은 테마와 어두운 테마. |
 
@@ -77,6 +78,28 @@ DbCraft는 전문 데이터베이스 GUI에서 익숙한 "하나의 창에서 �
 직접 확인할 수 있으며, 알림과 자동 설치를 켜고 끌 수 있습니다.
 소스에서 빌드한 경우 자동으로 업데이트되지 않습니다(`git pull`). 그래도 막대를 시험해 보려면
 `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`로 실행하세요.
+
+#### AI 어시스턴트
+
+도구 모음의 **AI 채팅**(또는 도구 › AI 채팅)은 오른쪽에 채팅을 열고, **도구 › AI 설정**은
+설정을 엽니다. 둘 다 [OpenSlate](https://github.com/rmpaolillo/OpenSlate)의 페이지이며 동작 방식도
+같습니다: 에이전트는 **순서대로** 시도되며, 하나가 응답하지 않으면(서버 꺼짐, 키 없음, 오류)
+다음 에이전트가 응답합니다. 에이전트는 설정 폴더의 `ai.toml`에 저장되며, 키는 절대 평문으로
+기록되지 않습니다: `keychain:NAME`(설정 페이지에서 입력한 키는 OS 키체인에 저장), `env:NAME` 또는
+`dsh:NAME`(DeepSeek Harness).
+
+채팅은 DbCraft에서 선택된 데이터베이스를 알고 있으며, 다음 도구를 사용합니다:
+
+| 도구 | 하는 일 |
+|---|---|
+| `db_connections`, `db_databases`, `db_tables`, `db_describe` | 설정된 연결과 그 데이터베이스의 구조 |
+| `db_query` | **읽기 전용** SQL(SELECT, WITH, SHOW, EXPLAIN…)을 실행, 최대 `max_rows`행 |
+| `db_open_query` | 쿼리를 실행하지 않고 새 편집기 탭에서 열기 |
+| `db_execute` | 데이터나 구조를 변경: 먼저 변경을 준비만 하여 정확한 SQL을 보여 주고, 다음 메시지에서 **예**라고 답한 뒤에만 실행합니다(그리고 *AI 설정 › 데이터베이스*에서 변경을 허용한 경우에만) |
+
+답변의 모든 SQL 블록에는 **편집기에서 열기**와 **복사**가 있습니다. 로컬 모델(LM Studio,
+Ollama)을 사용하면 아무것도 컴퓨터 밖으로 나가지 않으며, 클라우드 서비스를 사용하면 질문과
+AI가 읽은 데이터가 해당 서비스로 전송됩니다.
 
 ### 요구 사항
 
@@ -206,6 +229,7 @@ crates/
 - [x] 자체 벡터 아이콘 세트
 - [x] 9개 언어로 된 인터페이스
 - [x] ER 다이어그램, 백업/복원, 예약된 작업, 사용자 및 권한
+- [x] 쿼리와 데이터베이스를 위한 AI 채팅 (OpenSlate와 같은 방식)
 - [ ] 데이터 및 구조 동기화, BI
 - [ ] 더 많은 엔진 (Oracle, MongoDB, Redis)
 
@@ -237,7 +261,11 @@ DbCraft는 많은 오픈 소스 프로젝트의 성과 위에 만들어졌습니
 - **[sys-locale](https://github.com/1Password/sys-locale)**: 시스템 언어.
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1): OpenSlate와 마찬가지로
   메뉴의 언어 이름 中文 日本語 한국어를 위한 아주 작은 서브셋.
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: 번역 시스템과 자체 업데이트.
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: 번역 시스템, 자체 업데이트, AI
+  채팅(페이지, 공급자 체인, 설정).
+- **[wry](https://github.com/tauri-apps/wry)**: 창 안에 표시되는 AI 채팅의 WebView.
+- **[KaTeX](https://katex.org)**, **[marked](https://marked.js.org)**, **[DOMPurify](https://github.com/cure53/DOMPurify)**
+  및 **[Inter](https://rsms.me/inter/)** 글꼴, 채팅 페이지용으로 번들 포함(`crates/app/web/vendor` 참조).
 
 타사 구성 요소와 그 라이선스의 전체 목록은 [CREDITS.md](CREDITS.md)에 있습니다.
 

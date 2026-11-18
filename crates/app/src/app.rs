@@ -126,6 +126,8 @@ pub enum Tab {
     Backup(Box<BackupTab>),
     Automation(Box<AutomationTab>),
     Model(Box<ModelTab>),
+    /// «Impostazioni AI»: the settings page (a WebView), as in OpenSlate.
+    AiSettings,
 }
 
 pub struct TabEntry {
@@ -167,6 +169,12 @@ pub struct App {
     running_jobs: HashSet<u64>,
     show_about: bool,
     tree_gen: u64,
+    /// The AI chat and settings pages (WebViews inside the window).
+    embeds: crate::embed::Embeds,
+    /// The AI chat is open on the right.
+    chat_open: bool,
+    chat_rect: Option<egui::Rect>,
+    settings_rect: Option<egui::Rect>,
 }
 
 pub fn icon(kind: ObjectKind) -> Db {
@@ -245,7 +253,14 @@ impl App {
             running_jobs: HashSet::new(),
             show_about: false,
             tree_gen: 0,
+            embeds: crate::embed::Embeds::new(),
+            chat_open: false,
+            chat_rect: None,
+            settings_rect: None,
         };
+        // the AI chat: its server and its database tools on DbCraft's runtime
+        crate::dbagent::set_runtime(app.backend.handle());
+        crate::web::start(&app.backend.handle(), &cc.egui_ctx);
         if let Some(id) = cli_id {
             app.connect(&id);
         }
@@ -485,7 +500,7 @@ impl App {
                         Tab::Catalog(t) => t.handle(other, &mut env),
                         Tab::Backup(t) => t.handle(other, &mut env),
                         Tab::Model(t) => t.handle(other),
-                        Tab::Objects | Tab::Automation(_) => {}
+                        Tab::Objects | Tab::Automation(_) | Tab::AiSettings => {}
                     }
                 }
             }
@@ -692,6 +707,16 @@ impl App {
             }
             if icons::tile(ui, Db::Model, "Modello").clicked() {
                 self.open_model();
+            }
+            let r = icons::tile(ui, Db::Sparkle, "Chat AI").on_hover_text(i18n::t("L'assistente AI: scrive e spiega le query, legge la struttura e i dati dei database"));
+            if self.chat_open {
+                selected_frame(ui, &r);
+            }
+            if r.clicked() {
+                self.chat_open = !self.chat_open;
+                if self.chat_open {
+                    self.embeds.focus(crate::embed::Slot::Chat);
+                }
             }
             ui.separator();
             if icons::tile(ui, Db::NewTable, "Nuova tabella").clicked() {
@@ -1046,6 +1071,13 @@ impl App {
                 if icons::menu_item(ui, Db::Model, "Modello").clicked() {
                     self.open_model();
                 }
+                ui.separator();
+                if icons::menu_item(ui, Db::Sparkle, "Chat AI").clicked() {
+                    self.chat_open = true;
+                }
+                if icons::menu_item(ui, Db::Sparkle, "Impostazioni AI").clicked() {
+                    self.open_ai_settings();
+                }
                 if icons::menu_item(ui, Db::QueryBuilder, "Query Builder").clicked()
                     && let Some(l) = self.loc.clone()
                 {
@@ -1113,6 +1145,162 @@ impl App {
             i18n::set_lang(i18n::resolve(&self.updater.settings.ui_lang));
             crate::fonts::apply(ui.ctx());
             ui.close();
+        }
+    }
+
+    // ----- AI chat (as in OpenSlate: pages in WebViews) -----
+
+    /// The page URL of the local server, with the theme.
+    fn page_url(&self, ctx: &egui::Context, page: &str) -> Option<String> {
+        let theme = if ctx.global_style().visuals.dark_mode { "dark" } else { "light" };
+        let sep = if page.contains('?') { '&' } else { '?' };
+        crate::web::origin().map(|o| format!("{o}{page}{sep}embed=1&theme={theme}"))
+    }
+
+    fn open_ai_settings(&mut self) {
+        self.open_unique(|t| matches!(t, Tab::AiSettings), "Impostazioni AI".into(), |_| Tab::AiSettings);
+    }
+
+    /// Each frame: what the chat needs to know, what it asked to do, and the messages of the pages.
+    fn ai_tick(&mut self, ctx: &egui::Context) {
+        use crate::embed::Slot;
+        self.embeds.set_wake(ctx);
+        crate::dbagent::set_connections(&self.configs);
+        match &self.loc {
+            Some(l) => {
+                let cfg = self.cfg(&l.conn);
+                let name = cfg.map(|c| c.name.clone()).unwrap_or_default();
+                let kind = cfg.map(|c| c.kind.label()).unwrap_or("");
+                let mut title = if l.db.is_empty() { name.clone() } else { format!("{} ({name}, {kind})", l.db) };
+                if let Some(s) = &l.schema {
+                    title = format!("{}.{s} ({name}, {kind})", l.db);
+                }
+                crate::ai::set_context(&title, &l.conn, &l.db, l.schema.as_deref());
+            }
+            None => crate::ai::set_context("", "", "", None),
+        }
+        // queries the AI opened in the editor
+        for (conn, db, schema, sql, title) in crate::dbagent::take_to_open() {
+            let id = self.next_id;
+            let mut tab = QueryTab::new(id, Location { conn, db, schema });
+            tab.set_sql(sql, false);
+            self.add_tab(title, Tab::Query(Box::new(tab)));
+        }
+        for (slot, v) in self.embeds.poll() {
+            match v["cmd"].as_str().unwrap_or("") {
+                "close_pane" => self.chat_open = false,
+                "open_settings" => self.open_ai_settings(),
+                "close_settings" => {
+                    if let Some(i) = self.tabs.iter().position(|t| matches!(t.tab, Tab::AiSettings)) {
+                        self.close_tab(i);
+                    }
+                }
+                "config_saved" => self.embeds.eval(Slot::Chat, "window.wsChat && wsChat.reloadConfig()"),
+                // «Apri nell'editor» on a SQL block of an answer
+                "open_sql" if slot == Slot::Chat => match self.loc.clone() {
+                    Some(loc) => {
+                        let id = self.next_id;
+                        let mut tab = QueryTab::new(id, loc);
+                        tab.set_sql(v["sql"].as_str().unwrap_or("").trim().to_string(), false);
+                        let n = self.tabs.iter().filter(|t| matches!(t.tab, Tab::Query(_))).count() + 1;
+                        self.add_tab(format!("Query {n} (AI)"), Tab::Query(Box::new(tab)));
+                    }
+                    None => self.notify("Apri prima una connessione/database", true),
+                },
+                _ => {}
+            }
+        }
+        // a click on DbCraft's own controls: the keyboard comes back to the app
+        if ctx.input(|i| i.pointer.any_pressed())
+            && let Some(p) = ctx.input(|i| i.pointer.interact_pos())
+            && !self.chat_rect.is_some_and(|r| r.contains(p))
+            && !self.settings_rect.is_some_and(|r| r.contains(p))
+        {
+            self.embeds.focus_parent();
+        }
+        // the pages follow the theme
+        let dark = ctx.global_style().visuals.dark_mode;
+        let id = egui::Id::unique("ai_pages_dark");
+        if ctx.data(|d| d.get_temp::<bool>(id)) != Some(dark) {
+            ctx.data_mut(|d| d.insert_temp(id, dark));
+            let js = format!("document.documentElement.dataset.theme = {}", if dark { "'dark'" } else { "'light'" });
+            self.embeds.eval(Slot::Chat, &js);
+            self.embeds.eval(Slot::Settings, &js);
+        }
+    }
+
+    /// The chat on the right (before the central panel: side panels go first).
+    fn chat_pane(&mut self, root: &mut egui::Ui, frame: &eframe::Frame) {
+        use crate::embed::Slot;
+        if !self.chat_open || crate::web::origin().is_none() {
+            self.chat_rect = None;
+            return;
+        }
+        if self.embeds.failed.is_some() {
+            // no WebView here: the chat in the browser
+            if let Some(url) = self.page_url(root.ctx(), "chat") {
+                crate::selfupdate::open_url(&url.replace("embed=1", "embed=0"));
+            }
+            self.chat_open = false;
+            return;
+        }
+        let bg = root.visuals().panel_fill;
+        if !self.embeds.has(Slot::Chat)
+            && let Some(url) = self.page_url(root.ctx(), "chat?pane=1")
+            && let Some(origin) = crate::web::origin()
+        {
+            self.embeds.ensure(Slot::Chat, frame, &origin, &url, bg);
+        }
+        let total = root.available_rect_before_wrap().width();
+        let max = (total - 360.0).max(340.0);
+        let r = egui::Panel::right("ai_chat")
+            .resizable(true)
+            .default_size((total * 0.32).clamp(340.0, 520.0))
+            .size_range(320.0..=max)
+            .frame(egui::Frame::NONE.fill(bg).stroke(egui::Stroke::new(1.0, root.visuals().widgets.noninteractive.bg_stroke.color)))
+            .show(root, |ui| {
+                let r = ui.max_rect();
+                ui.allocate_rect(r, egui::Sense::hover());
+                if !self.embeds.has(Slot::Chat) {
+                    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, i18n::t("Apro la chat…"), egui::FontId::proportional(12.0), ui.visuals().weak_text_color());
+                }
+                r
+            });
+        // a free strip on the side of the border that widens the panel
+        self.chat_rect = Some(r.inner.with_min_x(r.inner.min.x + 4.0));
+    }
+
+    /// Puts the pages in place; hides them under menus, popups and dialogs (a WebView is always
+    /// above what egui draws).
+    fn place_pages(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        use crate::embed::Slot;
+        // the settings tab: its page
+        let settings_active = matches!(self.tabs.get(self.active).map(|t| &t.tab), Some(Tab::AiSettings));
+        if settings_active
+            && !self.embeds.has(Slot::Settings)
+            && self.embeds.failed.is_none()
+            && let (Some(url), Some(origin)) = (self.page_url(ctx, "impostazioni"), crate::web::origin())
+        {
+            let bg = ctx.global_style().visuals.panel_fill;
+            self.embeds.ensure(Slot::Settings, frame, &origin, &url, bg);
+        }
+        let covers: Vec<egui::Rect> = ctx.memory(|m| {
+            m.areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|l| matches!(l.order, egui::Order::Foreground | egui::Order::Middle))
+                .filter_map(|l| m.area_rect(l.id))
+                .collect()
+        });
+        let modal = self.conn_dialog.is_some() || self.export_dialog.is_some() || self.import_dialog.is_some() || self.confirm.is_some() || self.show_about;
+        let free = |r: Option<egui::Rect>| r.filter(|r| !modal && !covers.iter().any(|c| c.intersects(*r)));
+        self.embeds.set_origin(ctx.input(|i| i.viewport().inner_rect.map(|r| r.min)));
+        let chat = free(self.chat_rect);
+        let settings = free(self.settings_rect.take().filter(|_| settings_active));
+        self.embeds.place(Slot::Chat, chat);
+        self.embeds.place(Slot::Settings, settings);
+        if settings.is_none() && !settings_active && self.embeds.has(Slot::Settings) {
+            self.embeds.place(Slot::Settings, None);
         }
     }
 
@@ -1368,6 +1556,7 @@ impl App {
                         Tab::Backup(_) => Db::Backup.into(),
                         Tab::Automation(_) => Db::Automation.into(),
                         Tab::Model(_) => Db::Model.into(),
+                        Tab::AiSettings => Db::Sparkle.into(),
                     };
                     let frame = egui::Frame::new()
                         .fill(if selected { ui.visuals().extreme_bg_color } else { ui.visuals().faint_bg_color })
@@ -1786,7 +1975,7 @@ fn objects_tree(
 }
 
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         while let Ok(msg) = self.backend.rx.try_recv() {
             self.handle(msg);
@@ -1803,6 +1992,7 @@ impl eframe::App for App {
             self.notify(text, error);
         }
         self.run_due_jobs(&ctx);
+        self.ai_tick(&ctx);
         egui::Panel::top("menubar").show(ui, |ui| self.menu_bar(ui));
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.add_space(2.0);
@@ -1814,6 +2004,7 @@ impl eframe::App for App {
         }
         egui::Panel::bottom("status").exact_size(24.0).show(ui, |ui| self.status_bar(ui));
         egui::Panel::left("tree").resizable(true).default_size(250.0).min_size(160.0).show(ui, |ui| self.tree_ui(ui));
+        self.chat_pane(ui, frame);
         egui::CentralPanel::default().show(ui, |ui| {
             self.tab_strip(ui);
             ui.add_space(2.0);
@@ -1840,6 +2031,15 @@ impl eframe::App for App {
                     Tab::Backup(t) => t.ui(ui, &mut env),
                     Tab::Automation(t) => t.ui(ui, &mut env, &mut self.jobs, &self.running_jobs, loc.as_ref()),
                     Tab::Model(t) => t.ui(ui, &mut env),
+                    Tab::AiSettings => {
+                        let r = ui.available_rect_before_wrap();
+                        ui.allocate_rect(r, egui::Sense::hover());
+                        if !self.embeds.has(crate::embed::Slot::Settings) {
+                            let msg = self.embeds.failed.clone().map(|e| i18n::tf(format!("Pagina non disponibile: {e}"))).unwrap_or_else(|| i18n::t("Apro…").to_string());
+                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(13.0), ui.visuals().weak_text_color());
+                        }
+                        self.settings_rect = Some(r);
+                    }
                     Tab::Table(t) => t.ui(ui, &mut env),
                     Tab::Query(t) => t.ui(ui, &mut env),
                     Tab::Designer(t) => t.ui(ui, &mut env, id),
@@ -1851,5 +2051,6 @@ impl eframe::App for App {
         self.about(&ctx);
         self.notices_ui(&ctx);
         self.apply_actions();
+        self.place_pages(&ctx, frame);
     }
 }

@@ -3,7 +3,12 @@
 // Release builds on Windows are GUI apps: no console window behind them.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
+mod aiconfig;
 mod app;
+mod chats;
+mod dbagent;
+mod embed;
 mod icons;
 mod backend;
 mod cli;
@@ -20,6 +25,8 @@ mod store;
 mod tabs;
 mod update;
 mod update_ui;
+mod vendor;
+mod web;
 
 fn main() -> eframe::Result {
     // `--size 1440x900`: a fixed window size (scripted screenshots), not the remembered one

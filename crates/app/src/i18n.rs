@@ -265,6 +265,14 @@ fn missing(s: &str) {
     }
 }
 
+/// La tabella della lingua attuale in JSON, per le pagine web (chat, impostazioni AI).
+pub fn table_json() -> String {
+    match table() {
+        Some(tb) => serde_json::to_string(&tb.exact).unwrap_or_else(|_| "{}".into()),
+        None => "{}".into(),
+    }
+}
+
 /// Come `tr`, per una `String` già fatta (es. `format!`).
 pub fn tf(s: String) -> String {
     match tr(&s) {

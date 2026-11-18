@@ -57,10 +57,12 @@ pub enum Db {
     Star,
     /// "Altri" (other objects): three small shapes.
     Others,
+    /// The AI chat: a sparkle, as in OpenSlate.
+    Sparkle,
 }
 
 impl Db {
-    pub const ALL: [Db; 45] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword, Db::Update, Db::Star, Db::Others];
+    pub const ALL: [Db; 46] = [Db::Connection, Db::Database, Db::DatabaseOpen, Db::Schema, Db::Table, Db::NewTable, Db::View, Db::Function, Db::Procedure, Db::Trigger, Db::Query, Db::QueryBuilder, Db::User, Db::Backup, Db::Automation, Db::Model, Db::Bi, Db::Key, Db::Index, Db::Column, Db::ForeignKey, Db::Import, Db::Export, Db::Refresh, Db::Transaction, Db::Commit, Db::Rollback, Db::CellEditor, Db::Columns, Db::FormView, Db::TextView, Db::GridView, Db::Design, Db::Run, Db::RunSelection, Db::Sun, Db::Moon, Db::Objects, Db::Beautify, Db::Snippet, Db::Explain, Db::Keyword, Db::Update, Db::Star, Db::Others, Db::Sparkle];
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -379,6 +381,15 @@ pub fn paint(p: &Painter, rect: Rect, icon: Db, c: Color32) {
             let mut ring = pts.clone();
             ring.push(pts[0]);
             g.stroke(&ring, amber.gamma_multiply(0.8));
+        }
+        Db::Sparkle => {
+            // a big four-point star and a small one
+            let star = |cx: f32, cy: f32, r: f32, w: f32, col: Color32| {
+                g.poly(&[(cx, cy - r), (cx + w, cy - w), (cx + r, cy), (cx + w, cy + w), (cx, cy + r), (cx - w, cy + w), (cx - r, cy), (cx - w, cy - w)], col);
+            };
+            star(7.0, 9.0, 6.0, 1.5, purple);
+            star(12.8, 3.6, 2.8, 0.8, blue);
+            let _ = c;
         }
         Db::Others => {
             g.rect(1.5, 1.5, 5.5, 5.5, Some(blue), None);

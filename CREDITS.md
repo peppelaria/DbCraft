@@ -37,8 +37,10 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 - Project: <https://github.com/rmpaolillo/OpenSlate> (same author)
 - Used in: `crates/app/src/i18n.rs` (the translation system: Italian text as the key, JSON
   tables per language, placeholders that translate composed texts), `crates/app/src/fonts.rs`
-  (system fonts for Chinese, Japanese and Korean), and the self-update
-  (`update.rs`, `selfupdate.rs`, `update_ui.rs`).
+  (system fonts for Chinese, Japanese and Korean), the self-update
+  (`update.rs`, `selfupdate.rs`, `update_ui.rs`) and the AI chat: `ai.rs` (provider chain, keys,
+  streaming with tools), `aiconfig.rs`, `chats.rs`, `embed.rs` (WebViews), `web.rs` (the local
+  server) and the pages `crates/app/web/chat.html`, `impostazioni.html`, `i18n.js`, `wc.css`.
 
 ## Direct dependencies
 
@@ -64,6 +66,7 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 | [keyring](https://github.com/hwchen/keyring-rs) | OS keychain for passwords | MIT OR Apache-2.0 |
 | [rfd](https://github.com/PolyMeilex/rfd) | Native file dialogs | MIT |
 | [dirs](https://github.com/soc/dirs-rs) | OS configuration directories | MIT OR Apache-2.0 |
+| [wry](https://github.com/tauri-apps/wry), [toml](https://github.com/toml-rs/toml), [anyhow](https://github.com/dtolnay/anyhow), [base64](https://github.com/marshallpierce/rust-base64) | AI chat: WebViews in the window, `ai.toml`, errors, pasted images | MIT OR Apache-2.0 |
 | [sys-locale](https://github.com/1Password/sys-locale) | The system language (interface language) | MIT OR Apache-2.0 |
 | [ureq](https://github.com/algesten/ureq), [sha2](https://github.com/RustCrypto/hashes) | Self-update: GitHub releases and SHA-256 checks | MIT OR Apache-2.0 |
 
@@ -75,6 +78,8 @@ recorded in [`crates/dbgrid/NOTICE.md`](crates/dbgrid/NOTICE.md).
 | [syntect](https://github.com/trishume/syntect) | SQL highlighting through `egui_extras` | MIT |
 | [rustls](https://github.com/rustls/rustls), [ring](https://github.com/briansmith/ring), [aws-lc-rs](https://github.com/aws/aws-lc-rs) | TLS for database connections | Apache-2.0 / ISC / MIT (see each crate) |
 | Fonts bundled by egui through `epaint_default_fonts` (Ubuntu-Light, Hack, Noto Emoji, emoji-icon-font, egui-icons) | UI text and icons | Ubuntu Font Licence 1.0, OFL-1.1, MIT, Bitstream Vera (see `epaint_default_fonts`) |
+| [KaTeX](https://katex.org) 0.16.11, [marked](https://marked.js.org) 12.0.2, [DOMPurify](https://github.com/cure53/DOMPurify) 3.4.16 | Markdown, formulas and safe HTML in the AI chat pages (`crates/app/web/vendor`, from OpenSlate) | MIT / MIT / Apache-2.0 or MPL-2.0 (`LICENSE-*` next to them) |
+| [Inter](https://rsms.me/inter/) | The font of the AI chat pages (`crates/app/web/vendor/inter`) | SIL OFL 1.1 (`OFL-Inter.txt`) |
 | [Noto Sans CJK](https://github.com/notofonts/noto-cjk) (a 3 KB subset: the glyphs of 中文 日本語 한국어) | Language names in the View › Language menu, `crates/app/assets/fonts/NotoSansCJK-langnames.otf`, taken from OpenSlate | SIL OFL 1.1 ([`OFL-NotoSansCJK.txt`](crates/app/assets/fonts/OFL-NotoSansCJK.txt)) |
 | [option-ext](https://crates.io/crates/option-ext) | Dependency of `dirs`; used unmodified | MPL-2.0 |
 

@@ -40,6 +40,7 @@ DbCraft は、プロ向けデータベース GUI でおなじみの「すべて�
 | **テーブルデザイナー** | フィールド (名前、型、NOT NULL、キー、自動増分、デフォルト、コメント)、インデックス、外部キー。接続先の方言に合わせた `CREATE TABLE` / `ALTER TABLE` ステートメントのリアルタイム **SQL プレビュー** 付き。SQLite では、`ALTER` で表現できない変更はデータを保持したままテーブルを再構築して適用します。 |
 | **エクスポート** | テーブル、ビュー、クエリ結果を CSV、JSON、SQL `INSERT` スクリプト、Excel (`.xlsx`) に出力。 |
 | **インポート** | 区切り文字と見出し行を設定できる CSV、フィールド対応付けのプレビュー、空のセル → NULL (任意)。行はトランザクション内でバッチ挿入されます。 |
+| **AI チャット** | 右側のパネルに表示される AI アシスタント (ツールバーの **AI チャット**)。OpenSlate と同じもので、SQL の作成・説明・修正・最適化を行い、ツールを使ってデータベースを操作します。設定済みの接続を参照し、構造とデータを読み取り (読み取り専用のクエリ)、新しいエディタータブでクエリを開き、変更はチャットであなたが **はい** と答えた後にのみ行います。OpenAI 互換の任意のサービス (LM Studio、Ollama、OpenAI、Anthropic Claude、Google Gemini、DeepSeek、OpenRouter…) を順番に試し、失敗時は次へフォールバックします。会話の保存、Markdown と数式、自動圧縮付きのコンテキストメーター、そして **AI 設定** (エージェント、キーチェーン内のキー、テスト、モデル、コンテキスト)。 |
 | **言語** | インターフェースは **English、Italiano、Español、Français、Deutsch、Українська、中文、日本語、한국어** に対応: デフォルトではシステムの言語、または **表示 › 言語** で選んだ言語 (即座に反映)。中国語、日本語、韓国語にはシステムのフォントを使用します。 |
 | **UI** | ライトテーマとダークテーマ。 |
 
@@ -77,6 +78,28 @@ DbCraft は、プロ向けデータベース GUI でおなじみの「すべて�
 インストールのオン/オフを切り替えられます。
 ソースからのビルドは自動更新されません (`git pull`)。それでもバーを試したい場合は
 `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1` を付けて実行してください。
+
+#### AI アシスタント
+
+ツールバーの **AI チャット** (または ツール › AI チャット) で右側にチャットが開き、**ツール › AI 設定** で
+その設定が開きます。どちらも [OpenSlate](https://github.com/rmpaolillo/OpenSlate) のページで、ロジックも
+同じです: エージェントは **順番に** 試され、応答しない場合 (サーバー停止、キーなし、エラー) は次のエージェントが
+応答します。エージェントは設定フォルダーの `ai.toml` に保存されます。キーがそこに平文で書かれることはありません:
+`keychain:NAME` (設定ページで入力したキーは OS のキーチェーンに保存)、`env:NAME`、または
+`dsh:NAME` (DeepSeek Harness)。
+
+チャットは DbCraft で選択中のデータベースを把握しており、次のツールを持っています:
+
+| ツール | 機能 |
+|---|---|
+| `db_connections`、`db_databases`、`db_tables`、`db_describe` | 設定済みの接続と、そのデータベースの構造 |
+| `db_query` | **読み取り専用** の SQL (SELECT、WITH、SHOW、EXPLAIN…) を実行。最大 `max_rows` 行 |
+| `db_open_query` | クエリを実行せずに、新しいエディタータブで開く |
+| `db_execute` | データや構造を変更: まず変更を準備するだけで、正確な SQL が表示されます。その後、次のメッセージで **あなたが「はい」と答えた場合にのみ** 実行します (*AI 設定 › データベース* で変更が許可されている場合のみ) |
+
+回答内のすべての SQL ブロックには **エディターで開く** と **コピー** があります。ローカルモデル (LM Studio、
+Ollama) を使えば、何もコンピューターの外に出ません。クラウドサービスを使う場合、質問と AI が読み取ったデータは
+そのサービスに送信されます。
 
 ### 必要環境
 
@@ -204,6 +227,7 @@ crates/
 - [x] 独自のベクターアイコンセット
 - [x] 9 言語のインターフェース
 - [x] ER 図、バックアップ/復元、スケジュールタスク、ユーザーと権限
+- [x] クエリとデータベースのための AI チャット (OpenSlate と同様)
 - [ ] データと構造の同期、BI
 - [ ] その他のエンジン (Oracle、MongoDB、Redis)
 
@@ -235,7 +259,11 @@ DbCraft は多くのオープンソースプロジェクトの成果の上に成
 - **[sys-locale](https://github.com/1Password/sys-locale)**: システムの言語。
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1): OpenSlate と同様、メニュー内の
   言語名 中文 日本語 한국어 のためのごく小さなサブセット。
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: 翻訳システムと自動アップデート。
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**: 翻訳システム、自動アップデート、AI
+  チャット (そのページ、プロバイダーチェーン、設定)。
+- **[wry](https://github.com/tauri-apps/wry)**: ウィンドウ内の AI チャットの WebView。
+- **[KaTeX](https://katex.org)**、**[marked](https://marked.js.org)**、**[DOMPurify](https://github.com/cure53/DOMPurify)**
+  と **[Inter](https://rsms.me/inter/)** フォント。チャットページ用に同梱 (`crates/app/web/vendor` を参照)。
 
 サードパーティ製コンポーネントとそのライセンスの完全な一覧は [CREDITS.md](CREDITS.md) にあります。
 

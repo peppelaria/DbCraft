@@ -39,6 +39,7 @@ DbCraft 将专业数据库图形工具熟悉的「一个窗口管理所有数据
 | **表设计器** | 字段（名称、类型、不是 null、键、自动递增、默认、注释）、索引和外键，并针对连接的方言实时显示 `CREATE TABLE` / `ALTER TABLE` 语句的 **SQL 预览**。在 SQLite 上，无法用 `ALTER` 表达的更改会通过重建表来应用，并保留其数据。 |
 | **导出** | 将表、视图或查询结果导出为 CSV、JSON、SQL `INSERT` 脚本或 Excel（`.xlsx`）。 |
 | **导入** | CSV，可配置分隔符和标题行，提供字段映射预览，并可选择空单元格 → NULL。行会在事务中分批插入。 |
+| **AI 聊天** | 位于右侧面板中的 AI 助手（工具栏中的 **AI 聊天**），与 OpenSlate 中的相同：它可以编写、解释、修正和优化 SQL，并借助工具操作你的数据库。它能看到已配置的连接，读取结构和数据（只读查询），在新的编辑器选项卡中打开查询，并且只有在你于聊天中回答 **是** 之后才会执行修改。支持任何兼容 OpenAI 的服务（LM Studio、Ollama、OpenAI、Anthropic Claude、Google Gemini、DeepSeek、OpenRouter…），按顺序尝试并自动回退；提供已保存的对话、Markdown 和公式、带自动压缩的上下文用量表，以及 **AI 设置**（代理、保存在钥匙串中的密钥、测试、模型、上下文）。 |
 | **语言** | 界面支持 **English、Italiano、Español、Français、Deutsch、Українська、中文、日本語 和 한국어**：默认使用系统语言，也可在 **查看 › 语言** 中选择（立即生效）。中文、日文和韩文使用系统字体。 |
 | **界面** | 浅色和深色主题。 |
 
@@ -74,6 +75,26 @@ DbCraft 将专业数据库图形工具熟悉的「一个窗口管理所有数据
 工具栏按钮 **更新** 可手动检查更新，并开启或关闭更新提醒和自动安装。
 从源码构建的版本不会自行更新（请使用 `git pull`）；如仍想试用提示栏，可使用
 `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1` 运行。
+
+#### AI 助手
+
+工具栏中的 **AI 聊天**（或 工具 › AI 聊天）会在右侧打开聊天；**工具 › AI 设置** 打开其设置。
+两者都是 [OpenSlate](https://github.com/rmpaolillo/OpenSlate) 的页面，逻辑相同：代理会 **按顺序** 尝试，
+如果某个代理没有响应（服务器未启动、没有密钥、出错），则由下一个代理回答。代理配置保存在配置文件夹的
+`ai.toml` 中；密钥绝不会以明文写入其中，而是写作：`keychain:NAME`（在设置页面中输入的密钥会存入操作系统钥匙串）、
+`env:NAME` 或 `dsh:NAME`（DeepSeek Harness）。
+
+聊天知道 DbCraft 中当前选中的数据库，并且拥有以下工具：
+
+| 工具 | 作用 |
+|---|---|
+| `db_connections`、`db_databases`、`db_tables`、`db_describe` | 已配置的连接及其数据库的结构 |
+| `db_query` | 运行 **只读** SQL（SELECT、WITH、SHOW、EXPLAIN…），最多返回 `max_rows` 行 |
+| `db_open_query` | 在新的编辑器选项卡中打开查询，但不运行 |
+| `db_execute` | 修改数据或结构：首先只准备修改，你会看到确切的 SQL，然后 **只有在你于下一条消息中回答“是”之后** 才会执行（并且仅当 *AI 设置 › 数据库* 允许修改时） |
+
+回答中的每个 SQL 块都有 **在编辑器中打开** 和 **复制**。使用本地模型（LM Studio、Ollama）时，任何数据都不会离开你的计算机；
+使用云服务时，提问内容以及 AI 读取的数据会发送到该服务。
 
 ### 系统要求
 
@@ -194,6 +215,7 @@ crates/
 - [x] 自定义矢量图标集
 - [x] 九种语言的界面
 - [x] ER 图、备份/还原、计划任务、用户和权限
+- [x] 用于查询和数据库的 AI 聊天（与 OpenSlate 中一样）
 - [ ] 数据和结构同步、BI
 - [ ] 更多引擎（Oracle、MongoDB、Redis）
 
@@ -224,7 +246,11 @@ DbCraft 建立在众多开源项目的成果之上。谢谢！
 - **[sys-locale](https://github.com/1Password/sys-locale)**：系统语言。
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)**（SIL OFL 1.1）：一个很小的子集，用于菜单中的
   语言名称 中文 日本語 한국어，与 OpenSlate 中一样。
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**：翻译系统和自动更新。
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)**：翻译系统、自动更新和 AI
+  聊天（其页面、服务提供方链和设置）。
+- **[wry](https://github.com/tauri-apps/wry)**：窗口内 AI 聊天所用的 WebView。
+- **[KaTeX](https://katex.org)**、**[marked](https://marked.js.org)**、**[DOMPurify](https://github.com/cure53/DOMPurify)**
+  以及 **[Inter](https://rsms.me/inter/)** 字体，随聊天页面一起打包（见 `crates/app/web/vendor`）。
 
 第三方组件及其许可证的完整列表见 [CREDITS.md](CREDITS.md)。
 

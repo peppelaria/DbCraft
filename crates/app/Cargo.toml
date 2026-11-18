@@ -30,6 +30,12 @@ rust_xlsxwriter = "0.102"
 dirs = "6"
 # interface language: the system one (src/i18n.rs)
 sys-locale = "0.3"
+# AI chat and «Impostazioni AI», as in OpenSlate: pages in WebViews inside the window
+# (src/embed.rs, src/web.rs), providers in ai.toml (src/ai.rs)
+wry = "0.57"
+toml = "0.8"
+anyhow = "1"
+base64 = "0.22"
 # self-update from the GitHub releases (src/update.rs, src/selfupdate.rs)
 ureq = { version = "2", features = ["json"] }
 sha2 = "0.10"
@@ -59,3 +65,7 @@ assets = [
     ["../../LICENSE-APACHE", "usr/share/doc/dbcraft/LICENSE-APACHE", "644"],
     ["../../build/THIRD-PARTY-LICENSES.txt", "usr/share/doc/dbcraft/THIRD-PARTY-LICENSES.txt", "644"],
 ]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# the WebViews of the AI chat (WebKitGTK)
+gtk = "0.18"

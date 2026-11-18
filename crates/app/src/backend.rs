@@ -71,6 +71,11 @@ impl Backend {
         Ok(Backend { rt, drivers: Default::default(), tx, rx, ctx })
     }
 
+    /// The runtime, for the AI chat's server and tools.
+    pub fn handle(&self) -> tokio::runtime::Handle {
+        self.rt.handle().clone()
+    }
+
     pub fn notifier(&self) -> Notifier {
         Notifier { tx: self.tx.clone(), ctx: self.ctx.clone() }
     }

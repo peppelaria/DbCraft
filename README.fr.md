@@ -41,6 +41,7 @@ grandes tables, éditeur SQL, concepteur visuel de tables et import/export, pour
 | **Concepteur de tables** | Champs (nom, type, non null, clé, auto-incrément, valeur par défaut, commentaire), index et clés étrangères, avec un **Aperçu SQL** en direct des instructions `CREATE TABLE` / `ALTER TABLE` dans le dialecte de la connexion. Sous SQLite, les modifications qu'`ALTER` ne peut pas exprimer sont appliquées en reconstruisant la table, en conservant ses données. |
 | **Export** | Tables, vues ou résultats de requête vers CSV, JSON, script SQL `INSERT` ou Excel (`.xlsx`). |
 | **Import** | CSV avec délimiteur et ligne d'en-tête configurables, aperçu de l'association des champs et option cellule vide → NULL. Les lignes sont insérées par lots dans des transactions. |
+| **Chat IA** | Un assistant IA dans un panneau à droite (**Chat IA** dans la barre d'outils), le même que celui d'OpenSlate : il écrit, explique, corrige et optimise le SQL, et travaille sur vos bases de données avec des outils. Il voit les connexions configurées, lit la structure et les données (requêtes en lecture seule), ouvre des requêtes dans un nouvel onglet de l'éditeur et n'effectue des modifications qu'après votre **oui** dans le chat. N'importe quel service compatible OpenAI (LM Studio, Ollama, OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter…), essayés dans l'ordre avec repli ; conversations enregistrées, Markdown et formules, un indicateur de contexte avec compactage automatique, et **Réglages IA** (agents, clés dans le trousseau, test, modèles, contexte). |
 | **Langues** | L'interface parle **English, Italiano, Español, Français, Deutsch, Українська, 中文, 日本語 et 한국어** : la langue du système par défaut, ou celle choisie dans **Affichage › Langue** (elle s'applique immédiatement). Le chinois, le japonais et le coréen utilisent une police du système. |
 | **Interface** | Thèmes clair et sombre. |
 
@@ -80,6 +81,28 @@ bouton **Mises à jour** de la barre d'outils vérifie manuellement et active ou
 l'installation automatique. Les builds compilés depuis les sources ne se mettent pas à jour eux-mêmes
 (`git pull`) ; pour essayer la barre malgré tout, lancez avec
 `DBCRAFT_UPDATE_TEST=1 DBCRAFT_PRETEND_VERSION=0.0.1`.
+
+#### Assistant IA
+
+**Chat IA** dans la barre d'outils (ou Outils › Chat IA) ouvre le chat à droite ; **Outils › Réglages IA** ouvre
+ses réglages. Ce sont les pages d'[OpenSlate](https://github.com/rmpaolillo/OpenSlate), avec la même
+logique : les agents sont essayés **dans l'ordre**, et si l'un ne répond pas (serveur éteint, pas de clé,
+erreur), c'est le suivant qui répond. Ils se trouvent dans `ai.toml` dans le dossier de configuration ; une
+clé n'y est jamais écrite en clair : `keychain:NAME` (une clé saisie dans la page des réglages va dans le
+trousseau du système), `env:NAME` ou `dsh:NAME` (DeepSeek Harness).
+
+Le chat sait quelle base de données est sélectionnée dans DbCraft, et il dispose d'outils :
+
+| Outil | Ce qu'il fait |
+|---|---|
+| `db_connections`, `db_databases`, `db_tables`, `db_describe` | les connexions configurées et la structure de leurs bases de données |
+| `db_query` | exécute du SQL **en lecture seule** (SELECT, WITH, SHOW, EXPLAIN…), au plus `max_rows` lignes |
+| `db_open_query` | ouvre une requête dans un nouvel onglet de l'éditeur, sans l'exécuter |
+| `db_execute` | modifie les données ou la structure : d'abord il prépare seulement la modification et vous voyez le SQL exact, puis il l'exécute **uniquement après votre oui** dans le message suivant (et seulement si *Réglages IA › La base de données* autorise les modifications) |
+
+Chaque bloc SQL d'une réponse a **Ouvrir dans l'éditeur** et **Copier**. Avec un modèle local (LM Studio,
+Ollama), rien ne quitte votre ordinateur ; avec un service cloud, les questions et les données que lit l'IA
+sont envoyées à ce service.
 
 ### Prérequis
 
@@ -211,6 +234,7 @@ crates/
 - [x] Jeu d'icônes vectorielles personnalisé
 - [x] Interface en neuf langues
 - [x] Diagramme ER, sauvegarde/restauration, tâches planifiées, utilisateurs et privilèges
+- [x] Chat IA pour les requêtes et les bases de données (comme dans OpenSlate)
 - [ ] Synchronisation des données et de la structure, BI
 - [ ] Davantage de moteurs (Oracle, MongoDB, Redis)
 
@@ -243,7 +267,11 @@ DbCraft repose sur le travail de nombreux projets open source. Merci !
 - **[sys-locale](https://github.com/1Password/sys-locale)** : la langue du système.
 - **[Noto Sans CJK](https://github.com/notofonts/noto-cjk)** (SIL OFL 1.1) : un tout petit sous-ensemble
   pour les noms de langues 中文 日本語 한국어 dans le menu, comme dans OpenSlate.
-- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)** : le système de traduction et la mise à jour automatique.
+- **[OpenSlate](https://github.com/rmpaolillo/OpenSlate)** : le système de traduction, la mise à jour automatique et le chat
+  IA (ses pages, la chaîne des fournisseurs et les réglages).
+- **[wry](https://github.com/tauri-apps/wry)** : les WebViews du chat IA dans la fenêtre.
+- **[KaTeX](https://katex.org)**, **[marked](https://marked.js.org)**, **[DOMPurify](https://github.com/cure53/DOMPurify)**
+  et la police **[Inter](https://rsms.me/inter/)**, intégrés pour les pages du chat (voir `crates/app/web/vendor`).
 
 La liste complète des composants tiers et de leurs licences se trouve dans [CREDITS.md](CREDITS.md).
 
