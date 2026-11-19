@@ -54,10 +54,14 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_theme(egui::Theme::Light);
+            // the size of text and controls: the user's (Visualizza › Dimensione…, ⌘/Ctrl +/−/0),
+            // handled by the app (egui's own keys would not be saved)
+            cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
             // the language: `--lang xx` (scripted screenshots), else the setting, else the system's
             let arg = std::env::args().skip_while(|a| a != "--lang").nth(1);
-            let setting = store::Settings::load().ui_lang;
-            i18n::set_lang(i18n::resolve(arg.as_deref().unwrap_or(&setting)));
+            let settings = store::Settings::load();
+            cc.egui_ctx.set_zoom_factor(app::clamp_zoom(settings.ui_zoom));
+            i18n::set_lang(i18n::resolve(arg.as_deref().unwrap_or(&settings.ui_lang)));
             fonts::apply(&cc.egui_ctx);
             match app::App::new(cc) {
                 Ok(a) => Ok(Box::new(a) as Box<dyn eframe::App>),

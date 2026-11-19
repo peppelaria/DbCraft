@@ -1019,6 +1019,7 @@ impl App {
                 }
                 ui.separator();
                 ui.menu_button(i18n::t("Lingua"), |ui| self.language_menu(ui));
+                ui.menu_button(i18n::t("Dimensione di testo e controlli"), |ui| self.zoom_menu(ui));
                 ui.checkbox(&mut self.fav_only, i18n::t("Solo preferiti nell'albero"));
                 let dark = ui.visuals().dark_mode;
                 if ui.button(if dark { i18n::t("Tema chiaro") } else { i18n::t("Tema scuro") }).clicked() {
@@ -1130,6 +1131,64 @@ impl App {
     }
 
     /// Visualizza › Lingua: the system's or one of the interface languages (as in OpenSlate).
+    /// Visualizza › Dimensione di testo e controlli: larger, smaller, default, or a size.
+    fn zoom_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let now = ctx.zoom_factor();
+        let item = |ui: &mut egui::Ui, label: &'static str, key: egui::Key| ui.add(egui::Button::new(i18n::t(label)).shortcut_text(ctx.format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key))));
+        let mut set = None;
+        if item(ui, "Più grande", egui::Key::Plus).clicked() {
+            set = Some(zoom_step(now, 1));
+        }
+        if item(ui, "Più piccolo", egui::Key::Minus).clicked() {
+            set = Some(zoom_step(now, -1));
+        }
+        if item(ui, "Dimensione predefinita", egui::Key::Num0).clicked() {
+            set = Some(store::UI_ZOOM_DEFAULT);
+        }
+        ui.separator();
+        for z in store::UI_ZOOMS {
+            let label = if z == store::UI_ZOOM_DEFAULT { i18n::tf(format!("{:.0}% (predefinita)", z * 100.0)) } else { format!("{:.0}%", z * 100.0) };
+            if ui.selectable_label((now - z).abs() < 0.01, label).clicked() {
+                set = Some(z);
+            }
+        }
+        if let Some(z) = set {
+            self.set_zoom(&ctx, z);
+            ui.close();
+        }
+    }
+
+    /// Changes the size of text and controls and remembers it.
+    fn set_zoom(&mut self, ctx: &egui::Context, z: f32) {
+        let z = clamp_zoom(z);
+        ctx.set_zoom_factor(z);
+        if (self.updater.settings.ui_zoom - z).abs() > 0.001 {
+            self.updater.settings.ui_zoom = z;
+            self.updater.settings.save();
+        }
+    }
+
+    /// ⌘/Ctrl + (or =), ⌘/Ctrl −, ⌘/Ctrl 0.
+    fn zoom_keys(&mut self, ctx: &egui::Context) {
+        let cmd = |k| egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, k);
+        let now = ctx.zoom_factor();
+        let set = ctx.input_mut(|i| {
+            if i.consume_shortcut(&cmd(egui::Key::Plus)) || i.consume_shortcut(&cmd(egui::Key::Equals)) {
+                Some(zoom_step(now, 1))
+            } else if i.consume_shortcut(&cmd(egui::Key::Minus)) {
+                Some(zoom_step(now, -1))
+            } else if i.consume_shortcut(&cmd(egui::Key::Num0)) {
+                Some(store::UI_ZOOM_DEFAULT)
+            } else {
+                None
+            }
+        });
+        if let Some(z) = set {
+            self.set_zoom(ctx, z);
+        }
+    }
+
     fn language_menu(&mut self, ui: &mut egui::Ui) {
         use crate::i18n::Lang;
         let current = self.updater.settings.ui_lang.clone();
@@ -1349,9 +1408,15 @@ impl App {
         });
         let modal = self.conn_dialog.is_some() || self.export_dialog.is_some() || self.import_dialog.is_some() || self.confirm.is_some() || self.show_about;
         let free = |r: Option<egui::Rect>| r.filter(|r| !modal && !covers.iter().any(|c| c.intersects(*r)));
-        self.embeds.set_origin(ctx.input(|i| i.viewport().inner_rect.map(|r| r.min)));
-        let chat = free(self.chat_rect);
-        let settings = free(self.settings_rect.take().filter(|_| settings_active));
+        // the WebViews are placed in the window's points; egui's are larger by the zoom factor
+        let z = ctx.zoom_factor();
+        let os = |r: egui::Rect| egui::Rect::from_min_max((r.min.to_vec2() * z).to_pos2(), (r.max.to_vec2() * z).to_pos2());
+        self.embeds.set_origin(ctx.input(|i| i.viewport().inner_rect.map(|r| os(r).min)));
+        // never past the window's edge (a narrow window with a large size squeezes the panels)
+        let screen = ctx.content_rect();
+        let inside = |r: egui::Rect| Some(r.intersect(screen)).filter(|r| r.is_positive());
+        let chat = free(self.chat_rect).and_then(inside).map(os);
+        let settings = free(self.settings_rect.take().filter(|_| settings_active)).and_then(inside).map(os);
         self.embeds.place(Slot::Chat, chat);
         self.embeds.place(Slot::Settings, settings);
         if settings.is_none() && !settings_active && self.embeds.has(Slot::Settings) {
@@ -1928,6 +1993,18 @@ struct TreeRow {
     toggled: bool,
 }
 
+/// A size among those on offer (a hand-edited settings.json cannot make the app unusable).
+pub fn clamp_zoom(z: f32) -> f32 {
+    if z.is_finite() { z.clamp(store::UI_ZOOMS[0], store::UI_ZOOMS[store::UI_ZOOMS.len() - 1]) } else { store::UI_ZOOM_DEFAULT }
+}
+
+/// The next size up (`dir` 1) or down (-1) from `now`.
+fn zoom_step(now: f32, dir: i32) -> f32 {
+    let z = &store::UI_ZOOMS;
+    let next = if dir > 0 { z.iter().copied().find(|&v| v > now + 0.01) } else { z.iter().rev().copied().find(|&v| v < now - 0.01) };
+    next.unwrap_or(if dir > 0 { z[z.len() - 1] } else { z[0] })
+}
+
 fn tree_row(ui: &mut egui::Ui, depth: usize, open: Option<bool>, icon: Ico, badge: Option<Color32>, label: &str, selected: bool) -> TreeRow {
     let h = 20.0;
     let w = ui.available_width().max(160.0);
@@ -2042,6 +2119,7 @@ impl eframe::App for App {
             self.handle(msg);
         }
         self.automation();
+        self.zoom_keys(&ctx);
         self.cli.tick(&ctx);
         if self.cli.icon_gallery {
             egui::CentralPanel::default().show(ui, crate::icons::gallery);

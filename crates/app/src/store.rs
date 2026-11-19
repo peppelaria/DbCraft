@@ -32,11 +32,17 @@ pub struct Settings {
     pub update_skip: String,
     /// Interface language: `auto` (the system's) or a code (it, en, es, fr, de, uk, zh, ja, ko).
     pub ui_lang: String,
+    /// Size of text and controls compared with egui's default (Visualizza › Dimensione…).
+    pub ui_zoom: f32,
 }
+
+/// The interface sizes on offer, and the default one.
+pub const UI_ZOOMS: [f32; 9] = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.75, 2.0];
+pub const UI_ZOOM_DEFAULT: f32 = 1.1;
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { update_check: true, update_auto: false, update_skip: String::new(), ui_lang: "auto".into() }
+        Settings { update_check: true, update_auto: false, update_skip: String::new(), ui_lang: "auto".into(), ui_zoom: UI_ZOOM_DEFAULT }
     }
 }
 
