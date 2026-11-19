@@ -183,34 +183,37 @@ struct Vault {
 }
 
 impl Vault {
-    /// Reads the vault entry; when there is none yet, builds it from the older per-secret
-    /// `legacy` entries.
+    /// Reads the vault entry and copies into it the older per-secret `legacy` entries it lacks.
+    ///
+    /// The copy is done key by key, at every start, for the keys still missing: an old entry that
+    /// could not be read (access refused) is tried again next time, even if the vault has been
+    /// written in the meantime (a connection saved, another old entry copied). A missing old entry
+    /// costs a lookup but no prompt.
     fn open(kc: &dyn Keychain, legacy: &[String]) -> Vault {
-        match kc.get(VAULT_ENTRY) {
+        let mut v = match kc.get(VAULT_ENTRY) {
             Ok(Some(text)) => match serde_json::from_str(&text) {
                 Ok(secrets) => Vault { secrets, error: None },
-                Err(e) => Vault { error: Some(format!("keychain entry \"{VAULT_ENTRY}\" is damaged: {e}")), ..Vault::default() },
+                Err(e) => return Vault { error: Some(format!("keychain entry \"{VAULT_ENTRY}\" is damaged: {e}")), ..Vault::default() },
             },
-            Ok(None) => {
-                let mut v = Vault::default();
-                let mut complete = true;
-                for key in legacy {
-                    match kc.get(key) {
-                        Ok(Some(s)) if !s.is_empty() => {
-                            v.secrets.insert(key.clone(), s);
-                        }
-                        Ok(_) => {}
-                        Err(_) => complete = false,
-                    }
-                }
-                // with an old entry not read (access refused) the copy is tried again at the next start
-                if complete {
-                    let _ = v.write(kc);
-                }
-                v
+            Ok(None) => Vault::default(),
+            Err(e) => return Vault { error: Some(e), ..Vault::default() },
+        };
+        let mut copied = false;
+        for key in legacy {
+            if v.secrets.contains_key(key) {
+                continue;
             }
-            Err(e) => Vault { error: Some(e), ..Vault::default() },
+            if let Ok(Some(s)) = kc.get(key)
+                && !s.is_empty()
+            {
+                v.secrets.insert(key.clone(), s);
+                copied = true;
+            }
         }
+        if copied {
+            let _ = v.write(kc);
+        }
+        v
     }
 
     fn write(&self, kc: &dyn Keychain) -> Result<(), String> {
@@ -508,11 +511,11 @@ mod tests {
         // the old entries stay, for an older version
         assert_eq!(kc.items.borrow()["a"], "pa");
 
-        // next start: only the vault is read
+        // next start: the copied entries are not read again (only those still missing, which don't prompt)
         kc.reads.borrow_mut().clear();
         let mut c = conn("b", true);
         Vault::open(&kc, &legacy_entries(&conns)).fill(&mut c);
-        assert_eq!(*kc.reads.borrow(), [VAULT_ENTRY]);
+        assert_eq!(*kc.reads.borrow(), [VAULT_ENTRY, "c", "c:ssh"]);
         assert_eq!((c.password.as_str(), c.ssh.password.as_str()), ("pb", "kb"));
     }
 
@@ -520,9 +523,16 @@ mod tests {
     fn a_refused_old_entry_is_tried_again() {
         let mut kc = MemKeychain::with(&[("a", "pa"), ("b", "pb")]);
         kc.refused.insert("b".into());
-        let v = Vault::open(&kc, &["a".into(), "b".into()]);
+        let legacy = ["a".to_string(), "b".to_string()];
+        let mut v = Vault::open(&kc, &legacy);
         assert_eq!(v.secrets.len(), 1);
-        assert!(!kc.items.borrow().contains_key(VAULT_ENTRY));
+        // a connection saved meanwhile writes the vault: "b" must still be copied later
+        v.update(&ConnectionConfig { password: "pc".into(), ..conn("c", false) });
+        v.write(&kc).unwrap();
+        kc.refused.clear();
+        let v = Vault::open(&kc, &legacy);
+        assert_eq!(v.secrets.get("b").map(String::as_str), Some("pb"));
+        assert_eq!(kc.vault().len(), 3);
     }
 
     #[test]
