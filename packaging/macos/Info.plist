@@ -6,6 +6,7 @@
   <key>CFBundleDisplayName</key><string>DbCraft</string>
   <key>CFBundleIdentifier</key><string>io.github.rmpaolillo.dbcraft</string>
   <key>CFBundleExecutable</key><string>dbcraft</string>
+  <key>CFBundleIconFile</key><string>DbCraft</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>@VERSION@</string>
   <key>CFBundleShortVersionString</key><string>@VERSION@</string>

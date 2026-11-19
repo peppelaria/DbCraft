@@ -59,12 +59,24 @@ depends = "$auto"
 assets = [
     ["target/release/dbcraft", "usr/bin/", "755"],
     ["../../packaging/linux/dbcraft.desktop", "usr/share/applications/", "644"],
+    ["../../packaging/linux/icons/hicolor/16x16/apps/dbcraft.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/32x32/apps/dbcraft.png", "usr/share/icons/hicolor/32x32/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/48x48/apps/dbcraft.png", "usr/share/icons/hicolor/48x48/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/64x64/apps/dbcraft.png", "usr/share/icons/hicolor/64x64/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/128x128/apps/dbcraft.png", "usr/share/icons/hicolor/128x128/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/256x256/apps/dbcraft.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/512x512/apps/dbcraft.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
+    ["../../packaging/linux/icons/hicolor/scalable/apps/dbcraft.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
     ["../../README.md", "usr/share/doc/dbcraft/README.md", "644"],
     ["../../CREDITS.md", "usr/share/doc/dbcraft/CREDITS.md", "644"],
     ["../../LICENSE-MIT", "usr/share/doc/dbcraft/LICENSE-MIT", "644"],
     ["../../LICENSE-APACHE", "usr/share/doc/dbcraft/LICENSE-APACHE", "644"],
     ["../../build/THIRD-PARTY-LICENSES.txt", "usr/share/doc/dbcraft/THIRD-PARTY-LICENSES.txt", "644"],
 ]
+
+# the icon of dbcraft.exe (build.rs; packaging/windows/dbcraft.ico)
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # the native menu bar with Edit (Cmd+C / Cmd+V / Cmd+A in the AI chat pages), as in OpenSlate

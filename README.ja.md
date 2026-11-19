@@ -1,3 +1,5 @@
+<p align="center"><img src="packaging/icon/dbcraft.svg" width="128" height="128" alt="DbCraft"></p>
+
 # DbCraft
 
 [![CI](https://github.com/rmpaolillo/DbCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/rmpaolillo/DbCraft/actions/workflows/ci.yml)

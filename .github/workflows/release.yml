@@ -127,6 +127,7 @@ jobs:
           cp target/aarch64-apple-darwin/release/dbcraft "$APP/Contents/MacOS/dbcraft"
           sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
           cp README.md CREDITS.md LICENSE-MIT LICENSE-APACHE build/THIRD-PARTY-LICENSES.txt "$APP/Contents/Resources/"
+          cp packaging/macos/DbCraft.icns "$APP/Contents/Resources/"
           printf 'APPL????' > "$APP/Contents/PkgInfo"
           xattr -cr "$APP"
           # Sign inside-out: the executable, then the bundle. With a Developer ID: hardened
@@ -234,6 +235,7 @@ jobs:
           mkdir -p "build/$D" dist
           cp target/release/dbcraft README.md CREDITS.md LICENSE-MIT LICENSE-APACHE build/THIRD-PARTY-LICENSES.txt "build/$D/"
           cp packaging/linux/dbcraft.desktop "build/$D/"
+          cp -R packaging/linux/icons "build/$D/"
           tar -C build -czf "dist/$D.tar.gz" "$D"
 
       - name: .deb

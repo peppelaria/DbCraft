@@ -28,6 +28,16 @@ mod update_ui;
 mod vendor;
 mod web;
 
+/// The app icon on the window (and in the Dock / taskbar when DbCraft runs outside a bundle).
+fn window_icon() -> egui::IconData {
+    image::load_from_memory(include_bytes!("../assets/icon.png"))
+        .map(|i| {
+            let rgba = i.to_rgba8();
+            egui::IconData { width: rgba.width(), height: rgba.height(), rgba: rgba.into_raw() }
+        })
+        .unwrap_or_default()
+}
+
 fn main() -> eframe::Result {
     // `--size 1440x900`: a fixed window size (scripted screenshots), not the remembered one
     let size = std::env::args().skip_while(|a| a != "--size").nth(1).and_then(|s| {
@@ -35,7 +45,7 @@ fn main() -> eframe::Result {
         Some([w.parse::<f32>().ok()?, h.parse::<f32>().ok()?])
     });
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_title("DbCraft").with_inner_size(size.unwrap_or([1280.0, 800.0])).with_min_inner_size([800.0, 500.0]),
+        viewport: egui::ViewportBuilder::default().with_title("DbCraft").with_inner_size(size.unwrap_or([1280.0, 800.0])).with_min_inner_size([800.0, 500.0]).with_icon(window_icon()),
         persist_window: size.is_none(),
         ..Default::default()
     };
