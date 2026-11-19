@@ -150,7 +150,7 @@ impl ConnDialog {
                     });
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add_enabled(!self.cfg.name.trim().is_empty(), crate::theme::primary(RichText::new(i18n::t("OK")).strong())).clicked() {
+                    if ui.add_enabled(!self.cfg.name.trim().is_empty(), crate::theme::primary(i18n::t("OK"))).clicked() {
                         out = Some(ConnOutcome::Save(Box::new(self.cfg.clone())));
                     }
                     if ui.button(i18n::t("Annulla")).clicked() {
@@ -654,7 +654,7 @@ impl ImportDialog {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let ready = self.data.is_some() && self.mapping.iter().any(Option::is_some) && !self.running;
-                    if ui.add_enabled(ready, crate::theme::primary(RichText::new(i18n::t("Importa")).strong())).clicked() {
+                    if ui.add_enabled(ready, crate::theme::primary(i18n::t("Importa"))).clicked() {
                         self.start(backend, configs);
                     }
                     if ui.button(i18n::t("Chiudi")).clicked() {

@@ -36,9 +36,10 @@ pub fn check<'a>(checked: &'a mut bool, text: impl egui::IntoAtoms<'a>) -> egui:
     egui::Checkbox::new(checked, text).with_class_if(CHECKED, on)
 }
 
-/// A button for the main action, painted in the accent colour.
-pub fn primary<'a>(text: impl egui::IntoAtoms<'a>) -> Button<'a> {
-    Button::new(text).with_class(PRIMARY)
+/// A button for the main action, painted in the accent colour, with bold white text
+/// (the colour is set on the text itself: a `.strong()` label would otherwise be drawn black on blue).
+pub fn primary<'a>(text: impl Into<String>) -> Button<'a> {
+    Button::new(egui::RichText::new(text).strong().color(Color32::WHITE)).with_class(PRIMARY)
 }
 
 struct DbStyle;
