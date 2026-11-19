@@ -1,4 +1,4 @@
-<p align="center"><img src="packaging/icon/dbcraft.svg" width="128" height="128" alt="DbCraft"></p>
+<p align="center"><img src="packaging/social/social-preview.png" width="100%" alt="DbCraft"></p>
 
 # DbCraft
 
