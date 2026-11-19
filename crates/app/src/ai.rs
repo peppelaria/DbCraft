@@ -1108,7 +1108,8 @@ fn stream_round(
         bail!("HTTP {code}: {}", msg.trim());
     }
 
-    let mut filt = ThinkFilter::default();
+    // con gli strumenti, le chiamate scritte come testo non si mostrano (vedi `text_calls`)
+    let mut filt = ThinkFilter { cut_calls: body.get("tools").is_some(), ..Default::default() };
     let mut reasoning = String::new();
     let mut calls: Vec<ToolCall> = Vec::new();
     let mut usage: Option<u32> = None;
@@ -1229,6 +1230,15 @@ fn stream_round(
         }
     }
     calls.retain(|c| !c.name.is_empty());
+    // chiamate scritte come testo (DeepSeek DSML, <tool_call>, [TOOL_CALLS]…): si eseguono lo stesso,
+    // e al modello si rimanda il testo senza il markup
+    let mut raw = filt.full.clone();
+    if calls.is_empty() && filt.cut_calls {
+        calls = text_calls(&filt.full);
+        if !calls.is_empty() {
+            raw = filt.visible().to_string();
+        }
+    }
     for (i, c) in calls.iter_mut().enumerate() {
         if c.id.is_empty() {
             c.id = format!("call_{i}");
@@ -1237,7 +1247,7 @@ fn stream_round(
             c.args = "{}".into();
         }
     }
-    Ok(RoundOut { usage, output, text: clean_reply(filt.visible()), raw: filt.full.clone(), reasoning, calls })
+    Ok(RoundOut { usage, output, text: clean_reply(filt.visible()), raw, reasoning, calls })
 }
 
 // ---------------------------------------------------------------------------
@@ -1395,6 +1405,8 @@ fn http_curl(url: &str, key: &str, body: Option<&serde_json::Value>, timeout_s: 
 /// (e lo passa a parte).
 #[derive(Default)]
 struct ThinkFilter {
+    /// Taglia il testo dove cominciano chiamate agli strumenti scritte come testo.
+    cut_calls: bool,
     full: String,
     sent: usize,
     think_sent: usize,
@@ -1402,6 +1414,18 @@ struct ThinkFilter {
 
 impl ThinkFilter {
     fn visible(&self) -> &str {
+        let t = self.after_think();
+        if !self.cut_calls {
+            return t;
+        }
+        match calls_start(t) {
+            Some(i) => t[..i].trim_end(),
+            // la fine potrebbe essere l'inizio di un segno di chiamata: si aspetta il resto
+            None => &t[..t.len() - partial_marker(t)],
+        }
+    }
+
+    fn after_think(&self) -> &str {
         let t = self.full.trim_start();
         if let Some(rest) = t.strip_prefix("<think>") {
             match rest.find("</think>") {
@@ -1458,6 +1482,110 @@ impl ThinkFilter {
             None
         }
     }
+}
+
+/// Dove i modelli scrivono le chiamate agli strumenti come testo, quando il server non le
+/// traduce in `tool_calls`: DeepSeek (DSML e il formato precedente), Qwen/Hermes, Mistral.
+const CALL_MARKERS: [&str; 5] = ["<｜tool▁calls▁begin｜>", "<｜tool▁call▁begin｜>", "<tool_call>", "[TOOL_CALLS]", "<function_calls>"];
+
+/// Inizio della prima chiamata scritta come testo, se c'è.
+fn calls_start(t: &str) -> Option<usize> {
+    let mut best = CALL_MARKERS.iter().filter_map(|m| t.find(m)).min();
+    // DSML: «<｜DSML｜function_calls>», a volte con le barre doppie o con spazi
+    let mut from = 0;
+    while let Some(k) = t[from..].find("DSML") {
+        let at = from + k;
+        let mut h = at.saturating_sub(12);
+        while !t.is_char_boundary(h) {
+            h += 1;
+        }
+        if let Some(lt) = t[h..at].rfind('<') {
+            let i = h + lt;
+            best = Some(best.map_or(i, |b| b.min(i)));
+            break;
+        }
+        from = at + 4;
+    }
+    best
+}
+
+/// Byte finali che potrebbero essere l'inizio di un segno di chiamata (da non mostrare ancora).
+fn partial_marker(t: &str) -> usize {
+    let mut keep = 0;
+    for m in CALL_MARKERS.iter().copied().chain(["<｜DSML｜", "<｜｜DSML"]) {
+        for (k, _) in m.char_indices().skip(1) {
+            if k > keep && t.ends_with(&m[..k]) {
+                keep = k;
+            }
+        }
+    }
+    keep
+}
+
+/// Le chiamate agli strumenti scritte come testo (vedi [`CALL_MARKERS`]).
+fn text_calls(full: &str) -> Vec<ToolCall> {
+    let Some(start) = calls_start(full) else { return Vec::new() };
+    let t = &full[start..];
+    let mut out = Vec::new();
+    let mut push = |name: &str, args: String| {
+        let name = name.trim();
+        if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+            out.push(ToolCall { id: String::new(), name: name.to_string(), args });
+        }
+    };
+    // DSML e simili: <invoke name="db_query"><parameter name="sql" string="true">…</parameter></invoke>
+    if t.contains("invoke name=\"") {
+        for inv in t.split("invoke name=\"").skip(1) {
+            let Some(q) = inv.find('"') else { continue };
+            let mut args = serde_json::Map::new();
+            for par in inv.split("parameter name=\"").skip(1) {
+                let (Some(q2), Some(gt)) = (par.find('"'), par.find('>')) else { continue };
+                let attrs = &par[q2..gt];
+                let body = &par[gt + 1..];
+                let end = body.find("parameter>").and_then(|e| body[..e].rfind("</")).unwrap_or(body.len());
+                let raw = &body[..end];
+                let v = if attrs.contains("string=\"false\"") { serde_json::from_str(raw.trim()).unwrap_or_else(|_| serde_json::json!(raw)) } else { serde_json::json!(raw) };
+                args.insert(par[..q2].to_string(), v);
+            }
+            push(&inv[..q], serde_json::Value::Object(args).to_string());
+        }
+        return out;
+    }
+    // DeepSeek: <｜tool▁call▁begin｜>function<｜tool▁sep｜>nome\n```json\n{…}\n```<｜tool▁call▁end｜>
+    if t.contains("<｜tool▁sep｜>") {
+        for c in t.split("<｜tool▁sep｜>").skip(1) {
+            let c = c.split("<｜tool▁call▁end｜>").next().unwrap_or(c);
+            let name = c.lines().next().unwrap_or("");
+            let args = match (c.find('{'), c.rfind('}')) {
+                (Some(a), Some(b)) if b > a => c[a..=b].to_string(),
+                _ => "{}".into(),
+            };
+            push(name, args);
+        }
+        return out;
+    }
+    // Qwen/Hermes: <tool_call>{"name": …, "arguments": {…}}</tool_call>; Mistral: [TOOL_CALLS][{…}]
+    let mut objs: Vec<serde_json::Value> = Vec::new();
+    for c in t.split("<tool_call>").skip(1) {
+        let c = c.split("</tool_call>").next().unwrap_or(c);
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(c.trim()) {
+            objs.push(v);
+        }
+    }
+    if let Some(rest) = t.strip_prefix("[TOOL_CALLS]")
+        && let Ok(serde_json::Value::Array(a)) = serde_json::from_str::<serde_json::Value>(rest.trim())
+    {
+        objs.extend(a);
+    }
+    for v in objs {
+        let args = match &v["arguments"] {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Null => v["parameters"].to_string(),
+            a => a.to_string(),
+        };
+        push(v["name"].as_str().unwrap_or(""), if args == "null" { "{}".into() } else { args });
+    }
+    out
 }
 
 /// Pulisce la risposta finale: ragionamento, ``` attorno.
