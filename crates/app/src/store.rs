@@ -67,59 +67,194 @@ pub fn load() -> Vec<ConnectionConfig> {
     let Some(p) = path() else { return Vec::new() };
     let Ok(text) = std::fs::read_to_string(p) else { return Vec::new() };
     let mut v: Vec<ConnectionConfig> = serde_json::from_str(&text).unwrap_or_default();
+    let mut vault = VAULT.lock().unwrap_or_else(|e| e.into_inner());
+    let vault = vault.get_or_insert_with(|| Vault::open(&OsKeychain, &legacy_entries(&v)));
     for c in &mut v {
-        if c.save_password {
-            c.password = get_password(&c.id).unwrap_or_default();
-        }
-        if c.ssh.save_password {
-            c.ssh.password = get_password(&ssh_entry(&c.id)).unwrap_or_default();
-        }
-        if c.http.save_password {
-            c.http.password = get_password(&format!("{}:http", c.id)).unwrap_or_default();
-            c.http.token = get_password(&format!("{}:http-token", c.id)).unwrap_or_default();
-            c.http.proxy_password = get_password(&format!("{}:proxy", c.id)).unwrap_or_default();
-        }
+        vault.fill(c);
     }
     v
 }
 
-/// Keychain entry of a connection's SSH password or key passphrase.
-fn ssh_entry(id: &str) -> String {
-    format!("{id}:ssh")
-}
-
-/// Stores or forgets the database and SSH secrets according to the "save" checkboxes.
+/// Stores or forgets the database, SSH and HTTP secrets according to the "save" checkboxes.
 pub fn save_secrets(c: &ConnectionConfig) -> Result<(), String> {
     if c.id.starts_with(TRANSIENT) {
         return Ok(());
     }
-    if c.save_password {
-        set_password(&c.id, &c.password)?;
-    } else {
-        delete_password(&c.id);
-    }
-    if c.ssh.enabled && c.ssh.save_password {
-        set_password(&ssh_entry(&c.id), &c.ssh.password)?;
-    } else {
-        delete_password(&ssh_entry(&c.id));
-    }
-    for (suffix, secret) in [("http", &c.http.password), ("http-token", &c.http.token), ("proxy", &c.http.proxy_password)] {
-        let entry = format!("{}:{suffix}", c.id);
-        if c.http.enabled && c.http.save_password {
-            set_password(&entry, secret)?;
-        } else {
-            delete_password(&entry);
-        }
-    }
-    Ok(())
+    with_vault(|v| {
+        v.update(c);
+        v.write(&OsKeychain)
+    })
 }
 
 /// Removes every secret of a connection.
 pub fn delete_secrets(id: &str) {
-    delete_password(id);
-    delete_password(&ssh_entry(id));
-    for suffix in ["http", "http-token", "proxy"] {
-        delete_password(&format!("{id}:{suffix}"));
+    with_vault(|v| {
+        v.remove(id);
+        let _ = v.write(&OsKeychain);
+    });
+    // and the entries an older version may have left
+    for key in secret_keys(id) {
+        OsKeychain.delete(&key);
+    }
+}
+
+// ----- connection secrets in the keychain -----
+//
+// All the secrets of all the connections live in ONE keychain entry (service "dbcraft", account
+// "secrets"): a JSON object `{key: secret}`, keyed as in `secret_keys`. The keychain asks for
+// permission once per entry an app reads, and on macOS an ad-hoc-signed build counts as a new
+// app after every update: with one entry per secret that was a password prompt for every saved
+// connection (two with an SSH tunnel) at each start; now it is a single one.
+//
+// Older versions kept one entry per secret (service "dbcraft", account = the key). The first
+// time, they are copied into the vault and left where they are, so an older DbCraft still
+// finds them.
+
+/// Account of the keychain entry holding every secret.
+const VAULT_ENTRY: &str = "secrets";
+
+static VAULT: std::sync::Mutex<Option<Vault>> = std::sync::Mutex::new(None);
+
+/// Keys of a connection's secrets: database password, SSH password or key passphrase, HTTP
+/// tunnel password, tunnel token, proxy password.
+fn secret_keys(id: &str) -> [String; 5] {
+    [id.to_string(), format!("{id}:ssh"), format!("{id}:http"), format!("{id}:http-token"), format!("{id}:proxy")]
+}
+
+/// The per-secret entries an older version saved for these connections (those `load` read).
+fn legacy_entries(conns: &[ConnectionConfig]) -> Vec<String> {
+    let mut keys = Vec::new();
+    for c in conns {
+        let [db, ssh, http, token, proxy] = secret_keys(&c.id);
+        if c.save_password {
+            keys.push(db);
+        }
+        if c.ssh.save_password {
+            keys.push(ssh);
+        }
+        if c.http.save_password {
+            keys.extend([http, token, proxy]);
+        }
+    }
+    keys
+}
+
+fn with_vault<R>(f: impl FnOnce(&mut Vault) -> R) -> R {
+    let mut vault = VAULT.lock().unwrap_or_else(|e| e.into_inner());
+    f(vault.get_or_insert_with(|| Vault::open(&OsKeychain, &[])))
+}
+
+/// Where the entries are kept: the OS keychain, or memory in the tests.
+trait Keychain {
+    /// `Ok(None)`: there is no such entry.
+    fn get(&self, key: &str) -> Result<Option<String>, String>;
+    fn set(&self, key: &str, value: &str) -> Result<(), String>;
+    fn delete(&self, key: &str);
+}
+
+struct OsKeychain;
+
+impl Keychain for OsKeychain {
+    fn get(&self, key: &str) -> Result<Option<String>, String> {
+        match keyring::Entry::new(SERVICE, key).and_then(|e| e.get_password()) {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn set(&self, key: &str, value: &str) -> Result<(), String> {
+        keyring::Entry::new(SERVICE, key).and_then(|e| e.set_password(value)).map_err(|e| e.to_string())
+    }
+
+    fn delete(&self, key: &str) {
+        if let Ok(e) = keyring::Entry::new(SERVICE, key) {
+            let _ = e.delete_credential();
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Vault {
+    secrets: std::collections::BTreeMap<String, String>,
+    /// Why the vault entry could not be read (access refused, damaged): then it is never
+    /// written, not to overwrite the secrets in it.
+    error: Option<String>,
+}
+
+impl Vault {
+    /// Reads the vault entry; when there is none yet, builds it from the older per-secret
+    /// `legacy` entries.
+    fn open(kc: &dyn Keychain, legacy: &[String]) -> Vault {
+        match kc.get(VAULT_ENTRY) {
+            Ok(Some(text)) => match serde_json::from_str(&text) {
+                Ok(secrets) => Vault { secrets, error: None },
+                Err(e) => Vault { error: Some(format!("keychain entry \"{VAULT_ENTRY}\" is damaged: {e}")), ..Vault::default() },
+            },
+            Ok(None) => {
+                let mut v = Vault::default();
+                let mut complete = true;
+                for key in legacy {
+                    match kc.get(key) {
+                        Ok(Some(s)) if !s.is_empty() => {
+                            v.secrets.insert(key.clone(), s);
+                        }
+                        Ok(_) => {}
+                        Err(_) => complete = false,
+                    }
+                }
+                // with an old entry not read (access refused) the copy is tried again at the next start
+                if complete {
+                    let _ = v.write(kc);
+                }
+                v
+            }
+            Err(e) => Vault { error: Some(e), ..Vault::default() },
+        }
+    }
+
+    fn write(&self, kc: &dyn Keychain) -> Result<(), String> {
+        if let Some(e) = &self.error {
+            return Err(e.clone());
+        }
+        kc.set(VAULT_ENTRY, &serde_json::to_string(&self.secrets).map_err(|e| e.to_string())?)
+    }
+
+    /// Puts the saved secrets into a connection read from `connections.json`.
+    fn fill(&self, c: &mut ConnectionConfig) {
+        let get = |key: &String| self.secrets.get(key).cloned().unwrap_or_default();
+        let [db, ssh, http, token, proxy] = secret_keys(&c.id);
+        if c.save_password {
+            c.password = get(&db);
+        }
+        if c.ssh.save_password {
+            c.ssh.password = get(&ssh);
+        }
+        if c.http.save_password {
+            c.http.password = get(&http);
+            c.http.token = get(&token);
+            c.http.proxy_password = get(&proxy);
+        }
+    }
+
+    /// Keeps the secrets of a connection whose "save" box is ticked, forgets the others.
+    fn update(&mut self, c: &ConnectionConfig) {
+        let http = c.http.enabled && c.http.save_password;
+        let keep = [c.save_password, c.ssh.enabled && c.ssh.save_password, http, http, http];
+        let values = [&c.password, &c.ssh.password, &c.http.password, &c.http.token, &c.http.proxy_password];
+        for ((key, keep), value) in secret_keys(&c.id).into_iter().zip(keep).zip(values) {
+            if keep && !value.is_empty() {
+                self.secrets.insert(key, value.clone());
+            } else {
+                self.secrets.remove(&key);
+            }
+        }
+    }
+
+    fn remove(&mut self, id: &str) {
+        for key in secret_keys(id) {
+            self.secrets.remove(&key);
+        }
     }
 }
 
@@ -131,26 +266,6 @@ pub fn save(conns: &[ConnectionConfig]) -> Result<(), String> {
     let conns: Vec<&ConnectionConfig> = conns.iter().filter(|c| !c.id.starts_with(TRANSIENT)).collect();
     let text = serde_json::to_string_pretty(&conns).map_err(|e| e.to_string())?;
     std::fs::write(p, text).map_err(|e| e.to_string())
-}
-
-pub fn get_password(id: &str) -> Option<String> {
-    keyring::Entry::new(SERVICE, id).ok()?.get_password().ok()
-}
-
-pub fn set_password(id: &str, password: &str) -> Result<(), String> {
-    let e = keyring::Entry::new(SERVICE, id).map_err(|e| e.to_string())?;
-    if password.is_empty() {
-        let _ = e.delete_credential();
-        Ok(())
-    } else {
-        e.set_password(password).map_err(|e| e.to_string())
-    }
-}
-
-pub fn delete_password(id: &str) {
-    if let Ok(e) = keyring::Entry::new(SERVICE, id) {
-        let _ = e.delete_credential();
-    }
 }
 
 // ----- favorites, saved queries, backups, scheduled jobs -----
@@ -321,4 +436,130 @@ pub fn now() -> i64 {
 pub fn fmt_time(t: i64) -> String {
     use chrono::TimeZone;
     chrono::Local.timestamp_opt(t, 0).single().map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    /// A keychain in memory: `refused` entries fail as when the user denies access; `reads`
+    /// records every entry read.
+    #[derive(Default)]
+    struct MemKeychain {
+        items: RefCell<BTreeMap<String, String>>,
+        refused: BTreeSet<String>,
+        reads: RefCell<Vec<String>>,
+    }
+
+    impl MemKeychain {
+        fn with(items: &[(&str, &str)]) -> MemKeychain {
+            let kc = MemKeychain::default();
+            kc.items.borrow_mut().extend(items.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            kc
+        }
+        fn vault(&self) -> BTreeMap<String, String> {
+            serde_json::from_str(&self.items.borrow()[VAULT_ENTRY]).unwrap()
+        }
+    }
+
+    impl Keychain for MemKeychain {
+        fn get(&self, key: &str) -> Result<Option<String>, String> {
+            self.reads.borrow_mut().push(key.to_string());
+            if self.refused.contains(key) {
+                return Err("refused".into());
+            }
+            Ok(self.items.borrow().get(key).cloned())
+        }
+        fn set(&self, key: &str, value: &str) -> Result<(), String> {
+            self.items.borrow_mut().insert(key.to_string(), value.to_string());
+            Ok(())
+        }
+        fn delete(&self, key: &str) {
+            self.items.borrow_mut().remove(key);
+        }
+    }
+
+    fn conn(id: &str, ssh: bool) -> ConnectionConfig {
+        let mut c = ConnectionConfig { id: id.into(), save_password: true, ..Default::default() };
+        c.ssh.enabled = ssh;
+        c.ssh.save_password = ssh;
+        c
+    }
+
+    #[test]
+    fn legacy_entries_follow_the_save_boxes() {
+        let mut http = conn("c", false);
+        http.http.save_password = true;
+        let keys = legacy_entries(&[conn("a", false), conn("b", true), http]);
+        assert_eq!(keys, ["a", "b", "b:ssh", "c", "c:http", "c:http-token", "c:proxy"]);
+    }
+
+    #[test]
+    fn old_entries_are_copied_once_and_kept() {
+        let kc = MemKeychain::with(&[("a", "pa"), ("b", "pb"), ("b:ssh", "kb")]);
+        let conns = [conn("a", false), conn("b", true), conn("c", true)];
+        let v = Vault::open(&kc, &legacy_entries(&conns));
+        let expected: BTreeMap<_, _> = [("a", "pa"), ("b", "pb"), ("b:ssh", "kb")].map(|(k, v)| (k.to_string(), v.to_string())).into();
+        assert_eq!(v.secrets, expected);
+        assert_eq!(kc.vault(), expected);
+        // the old entries stay, for an older version
+        assert_eq!(kc.items.borrow()["a"], "pa");
+
+        // next start: only the vault is read
+        kc.reads.borrow_mut().clear();
+        let mut c = conn("b", true);
+        Vault::open(&kc, &legacy_entries(&conns)).fill(&mut c);
+        assert_eq!(*kc.reads.borrow(), [VAULT_ENTRY]);
+        assert_eq!((c.password.as_str(), c.ssh.password.as_str()), ("pb", "kb"));
+    }
+
+    #[test]
+    fn a_refused_old_entry_is_tried_again() {
+        let mut kc = MemKeychain::with(&[("a", "pa"), ("b", "pb")]);
+        kc.refused.insert("b".into());
+        let v = Vault::open(&kc, &["a".into(), "b".into()]);
+        assert_eq!(v.secrets.len(), 1);
+        assert!(!kc.items.borrow().contains_key(VAULT_ENTRY));
+    }
+
+    #[test]
+    fn an_unreadable_vault_is_never_overwritten() {
+        let mut kc = MemKeychain::with(&[(VAULT_ENTRY, r#"{"a":"pa"}"#)]);
+        kc.refused.insert(VAULT_ENTRY.into());
+        let mut v = Vault::open(&kc, &[]);
+        v.update(&ConnectionConfig { password: "new".into(), ..conn("b", false) });
+        assert!(v.write(&kc).is_err());
+        assert_eq!(kc.items.borrow()[VAULT_ENTRY], r#"{"a":"pa"}"#);
+
+        let kc = MemKeychain::with(&[(VAULT_ENTRY, "not json")]);
+        assert!(Vault::open(&kc, &[]).write(&kc).is_err());
+        assert_eq!(kc.items.borrow()[VAULT_ENTRY], "not json");
+    }
+
+    #[test]
+    fn update_and_remove() {
+        let kc = MemKeychain::default();
+        let mut v = Vault::open(&kc, &[]);
+        let mut c = conn("a", true);
+        c.password = "pa".into();
+        c.ssh.password = "ka".into();
+        c.http.password = "ignored: tunnel off".into();
+        v.update(&c);
+        v.update(&ConnectionConfig { password: "pb".into(), ..conn("b", false) });
+        v.write(&kc).unwrap();
+        assert_eq!(kc.vault().keys().collect::<Vec<_>>(), ["a", "a:ssh", "b"]);
+
+        // unticking "save" or emptying a password forgets it
+        c.ssh.save_password = false;
+        c.password.clear();
+        v.update(&c);
+        assert!(v.secrets.keys().all(|k| k == "b"));
+
+        v.remove("b");
+        v.write(&kc).unwrap();
+        assert!(kc.vault().is_empty());
+    }
 }
