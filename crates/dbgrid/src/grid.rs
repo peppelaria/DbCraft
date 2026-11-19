@@ -81,6 +81,19 @@ impl Selection {
     fn contains(&self, r: u32, c: u32, rows: u32, cols: u32) -> bool {
         self.bounds(rows, cols).is_some_and(|(r0, c0, r1, c1)| (r0..=r1).contains(&r) && (c0..=c1).contains(&c))
     }
+    /// Right click on the header of column `c`: unless it is already selected, it becomes the
+    /// selection, so the menu (sort, filter...) acts on it and not on the column selected before.
+    fn right_click_col(&mut self, c: u32, rows: u32, cols: u32) {
+        if !self.bounds(rows, cols).is_some_and(|(_, c0, _, c1)| (c0..=c1).contains(&c)) {
+            *self = Selection { anchor: (0, c), active: (self.active.0, c), kind: SelKind::Cols };
+        }
+    }
+    /// Right click on the number of row `r`: as `right_click_col`, for the rows.
+    fn right_click_row(&mut self, r: u32, rows: u32, cols: u32) {
+        if !self.bounds(rows, cols).is_some_and(|(r0, _, r1, _)| (r0..=r1).contains(&r)) {
+            *self = Selection { anchor: (r, 0), active: (r, self.active.1), kind: SelKind::Rows };
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -361,11 +374,17 @@ impl DataGrid {
                 events.push(GridEvent::Activated { row: r as usize, col: c as usize });
             }
         }
-        // Right click outside the selection moves it (so the menu acts on that cell).
-        if resp.secondary_clicked() && geo.in_cells(p) {
-            let (r, c) = (geo.row_at(p.y), geo.col_at(p.x));
-            if !self.sel.contains(r, c, nrows, ncols) {
-                self.select_cell(r, c);
+        // Right click outside the selection moves it (so the menu acts on that cell, column or row).
+        if resp.secondary_clicked() {
+            if geo.in_cells(p) {
+                let (r, c) = (geo.row_at(p.y), geo.col_at(p.x));
+                if !self.sel.contains(r, c, nrows, ncols) {
+                    self.select_cell(r, c);
+                }
+            } else if header.contains(p) && ncols > 0 {
+                self.sel.right_click_col(geo.col_at(p.x), nrows, ncols);
+            } else if gutter.contains(p) && nrows > 0 {
+                self.sel.right_click_row(geo.row_at(p.y), nrows, ncols);
             }
         }
     }
@@ -957,6 +976,33 @@ mod tests {
         let s = Selection { kind: SelKind::Cols, ..s };
         assert_eq!(s.bounds(10, 4), Some((0, 1, 9, 3)));
         assert_eq!(s.bounds(0, 4), None);
+    }
+
+    #[test]
+    fn right_click_on_a_header_selects_that_column() {
+        // the cursor on (row 0, col 0), as after sorting the first column
+        let mut s = Selection { anchor: (0, 0), active: (0, 0), kind: SelKind::Cells };
+        s.right_click_col(2, 6, 8);
+        assert_eq!(s.active.1, 2);
+        assert_eq!(s.bounds(6, 8), Some((0, 2, 5, 2)));
+        // a column already in the selection keeps it (menu on several columns)
+        let mut s = Selection { anchor: (0, 1), active: (0, 3), kind: SelKind::Cols };
+        s.right_click_col(2, 6, 8);
+        assert_eq!(s.bounds(6, 8), Some((0, 1, 5, 3)));
+        // empty table: still that column
+        let mut s = Selection::default();
+        s.right_click_col(4, 0, 8);
+        assert_eq!(s.active.1, 4);
+    }
+
+    #[test]
+    fn right_click_on_a_row_number_selects_that_row() {
+        let mut s = Selection { anchor: (0, 3), active: (0, 3), kind: SelKind::Cells };
+        s.right_click_row(4, 6, 8);
+        assert_eq!(s.bounds(6, 8), Some((4, 0, 4, 7)));
+        let mut s = Selection { anchor: (1, 0), active: (3, 0), kind: SelKind::Rows };
+        s.right_click_row(2, 6, 8);
+        assert_eq!(s.bounds(6, 8), Some((1, 0, 3, 7)));
     }
 
     #[test]
