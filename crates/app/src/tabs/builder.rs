@@ -139,6 +139,25 @@ pub struct QueryBuilder {
 }
 
 const TABLE_W: f32 = 210.0;
+/// The builder's blue (table headers, joins) and the green of a valid drop.
+const ACCENT: Color32 = Color32::from_rgb(0x1F, 0x6F, 0xD0);
+const OK: Color32 = Color32::from_rgb(0x1E, 0x9E, 0x5A);
+
+/// What is being dragged, next to the pointer and above everything: a table name, or a join
+/// `a.col = b.col` (`?` while there is no target yet).
+fn ghost_chip(ctx: &egui::Context, p: Pos2, text: &str, to: Option<&str>) {
+    let fg = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("qb-ghost")));
+    let label = match to {
+        Some(t) => format!("{text} = {t}"),
+        None => text.to_string(),
+    };
+    let galley = fg.layout_no_wrap(label, FontId::proportional(12.5), Color32::WHITE);
+    let r = Rect::from_min_size(p + vec2(14.0, 12.0), galley.size() + vec2(16.0, 8.0));
+    let color = if to.is_some_and(|t| t != "?") { OK } else { ACCENT };
+    fg.rect_filled(r.translate(vec2(2.0, 3.0)), 6.0, Color32::from_black_alpha(40));
+    fg.rect_filled(r, 6.0, color.gamma_multiply(0.85));
+    fg.galley(r.min + vec2(8.0, 4.0), galley, Color32::WHITE);
+}
 const HEAD_H: f32 = 24.0;
 const ROW_H: f32 = 20.0;
 const MAX_ROWS: usize = 12;
@@ -432,7 +451,7 @@ impl QueryBuilder {
                         let r = ui
                             .horizontal(|ui| {
                                 icons::show(ui, Db::Table, 15.0);
-                                ui.add(egui::Label::new(n.as_str()).sense(Sense::click_and_drag()))
+                                ui.add(egui::Label::new(n.as_str()).selectable(false).sense(Sense::click_and_drag()))
                             })
                             .inner
                             .on_hover_text(i18n::t("Doppio clic o trascina sulla tela"));
@@ -576,6 +595,28 @@ impl QueryBuilder {
         if bg.dragged() && self.drag_join.is_none() {
             self.pan += bg.drag_delta();
         }
+        // The table being dragged from the list: a ghost under the pointer, and where it will land.
+        if let (Some(name), Some(p)) = (egui::DragAndDrop::payload::<String>(ui.ctx()), ui.input(|i| i.pointer.hover_pos())) {
+            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+            if rect.contains(p) {
+                painter.rect_stroke(rect.shrink(1.0), 0.0, Stroke::new(2.0, ACCENT), StrokeKind::Inside);
+                let fg = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("qb-ghost")));
+                let card = Rect::from_min_size(p, vec2(TABLE_W, HEAD_H + 4.0 * ROW_H + 4.0));
+                fg.rect_filled(card.translate(vec2(3.0, 4.0)), 6.0, Color32::from_black_alpha(25));
+                fg.rect_filled(card, 6.0, ACCENT.gamma_multiply(0.12));
+                fg.rect_stroke(card, 6.0, Stroke::new(1.5, ACCENT.gamma_multiply(0.8)), StrokeKind::Inside);
+                let head = Rect::from_min_size(card.min, vec2(TABLE_W, HEAD_H));
+                fg.rect_filled(head, egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, ACCENT.gamma_multiply(0.75));
+                fg.with_clip_rect(head.shrink(2.0)).text(head.left_center() + vec2(8.0, 0.0), Align2::LEFT_CENTER, name.as_str(), FontId::proportional(13.0), Color32::WHITE);
+                for k in 0..4 {
+                    let y = head.bottom() + 6.0 + k as f32 * ROW_H;
+                    let w = [0.45, 0.6, 0.35, 0.5][k];
+                    fg.rect_filled(Rect::from_min_size(pos2(card.left() + 10.0, y + 5.0), vec2((TABLE_W - 20.0) * w, 8.0)), 3.0, ACCENT.gamma_multiply(0.25));
+                }
+            } else {
+                ghost_chip(ui.ctx(), p, &name, None);
+            }
+        }
         if let Some(name) = bg.dnd_release_payload::<String>() {
             let at = ui.input(|i| i.pointer.interact_pos()).map(|p| (p - origin - self.pan).to_pos2());
             self.add_table(&name, at);
@@ -630,6 +671,7 @@ impl QueryBuilder {
         let mut drop_target: Option<(usize, String)> = None;
         let pointer = ui.input(|i| i.pointer.interact_pos());
         let released = ui.input(|i| i.pointer.any_released());
+        let mut join_over: Option<(usize, String)> = None;
         for i in 0..self.tables.len() {
             let Some(t) = self.tables.get(i) else { continue };
             let r = self.table_rect(t, origin);
@@ -668,7 +710,18 @@ impl QueryBuilder {
                 let Some(rr) = self.row_rect(t, origin, row) else { continue };
                 let checked = self.fields.iter().any(|f| f.table == i && &f.col == name);
                 let resp = ui.interact(rr.intersect(body), ui.scope_id().with(("qbrow", i, row)), Sense::click_and_drag());
-                if resp.hovered() {
+                let dragging_from = self.drag_join.as_ref().map(|(ti, c)| (*ti, c == name));
+                if dragging_from == Some((i, true)) {
+                    clip.rect_filled(rr, 0.0, ACCENT.gamma_multiply(0.18));
+                } else if let Some((src, _)) = dragging_from
+                    && src != i
+                    && row > 0
+                    && pointer.is_some_and(|p| rr.contains(p))
+                {
+                    clip.rect_filled(rr, 0.0, OK.gamma_multiply(0.22));
+                    clip.rect_stroke(rr, 0.0, Stroke::new(1.5, OK), StrokeKind::Inside);
+                    join_over = Some((i, name.clone()));
+                } else if resp.hovered() {
                     clip.rect_filled(rr, 0.0, visuals.widgets.hovered.weak_bg_fill);
                 }
                 let cb = Rect::from_center_size(rr.left_center() + vec2(14.0, 0.0), vec2(12.0, 12.0));
@@ -707,8 +760,17 @@ impl QueryBuilder {
         if let (Some((ti, col)), Some(p)) = (&self.drag_join, pointer)
             && let Some(start) = self.anchor(*ti, col, origin, p.x)
         {
-            painter.line_segment([start, p], Stroke::new(1.5, Color32::from_rgb(0x1F, 0x6F, 0xD0)));
-            ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+            let color = if join_over.is_some() { OK } else { ACCENT };
+            let dx = ((p.x - start.x).abs() / 2.0).max(30.0);
+            let c1 = pos2(start.x + if p.x >= start.x { dx } else { -dx }, start.y);
+            let c2 = pos2(p.x - if p.x >= start.x { dx } else { -dx }, p.y);
+            painter.add(egui::epaint::CubicBezierShape::from_points_stroke([start, c1, c2, p], false, Color32::TRANSPARENT, Stroke::new(2.0, color)));
+            painter.circle_filled(start, 3.5, color);
+            painter.circle_filled(p, 4.0, color);
+            let from = self.tables.get(*ti).map(|t| format!("{}.{col}", t.alias)).unwrap_or_else(|| col.clone());
+            let to = join_over.as_ref().and_then(|(tj, c)| self.tables.get(*tj).map(|t| format!("{}.{c}", t.alias)));
+            ghost_chip(ui.ctx(), p, &from, Some(to.as_deref().unwrap_or("?")));
+            ui.ctx().set_cursor_icon(if join_over.is_some() { CursorIcon::Copy } else { CursorIcon::Grabbing });
         }
         if released && let Some((ti, col)) = self.drag_join.take()
             && let Some((tj, col2)) = drop_target
