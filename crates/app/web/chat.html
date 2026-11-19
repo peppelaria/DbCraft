@@ -1000,6 +1000,19 @@ function drawQueue() {
 }
 $("send").onclick = () => { if (busy && !q.value.trim()) busy.abort(); else submit(); };
 function grow() { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, innerHeight * 0.4) + "px"; }
+// una tabella o una vista trascinata dall'app (albero, elenco Oggetti): DbCraft disegna il
+// trascinamento, la pagina mostra dove si rilascia e mette il riferimento nel messaggio
+window.dbDropHint = (on) => document.body.classList.toggle("imgdrop", !!on);
+window.dbDrop = (text) => {
+  document.body.classList.remove("imgdrop");
+  const a = q.selectionStart ?? q.value.length, b = q.selectionEnd ?? a;
+  const before = q.value.slice(0, a), after = q.value.slice(b);
+  const pre = before && !/\s$/.test(before) ? " " : "", post = after && !/^\s/.test(after) ? " " : (after ? "" : " ");
+  q.value = before + pre + text + post + after;
+  const at = (before + pre + text + post).length;
+  q.focus(); q.setSelectionRange(at, at);
+  grow(); drawMeter();
+};
 
 // ---------------- comandi «/» (come DSH) ----------------
 const SLASH = [

@@ -1240,6 +1240,50 @@ impl App {
         }
     }
 
+    /// A table or view dragged from the tree or the Objects list: a ghost under the pointer and,
+    /// dropped on the AI chat, its reference in the message being written. (The page is a WebView
+    /// above the window, so egui cannot draw there: the page shows its own drop outline.)
+    fn chat_drop(&mut self, ctx: &egui::Context) {
+        use crate::embed::Slot;
+        let hint_id = egui::Id::unique("chat_drop_hint");
+        let was = ctx.data(|d| d.get_temp::<bool>(hint_id)).unwrap_or(false);
+        let dragged = egui::DragAndDrop::payload::<ObjRef>(ctx);
+        let pointer = ctx.input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
+        let over = dragged.is_some() && pointer.is_some_and(|p| self.chat_rect.is_some_and(|r| r.contains(p)));
+        if over != was {
+            ctx.data_mut(|d| d.insert_temp(hint_id, over));
+            self.embeds.eval(Slot::Chat, &format!("window.dbDropHint && dbDropHint({over})"));
+        }
+        let Some(obj) = dragged else { return };
+        ctx.set_cursor_icon(if over { egui::CursorIcon::Copy } else { egui::CursorIcon::Grabbing });
+        if let Some(p) = pointer {
+            let fg = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("obj_ghost")));
+            let font = egui::FontId::proportional(12.5);
+            let galley = fg.layout_no_wrap(obj.name.clone(), font, Color32::WHITE);
+            let r = egui::Rect::from_min_size(p + egui::vec2(14.0, 12.0), galley.size() + egui::vec2(34.0, 8.0));
+            let accent = Color32::from_rgb(0x1F, 0x6F, 0xD0);
+            fg.rect_filled(r.translate(egui::vec2(2.0, 3.0)), 6.0, Color32::from_black_alpha(40));
+            fg.rect_filled(r, 6.0, accent.gamma_multiply(0.88));
+            icons::paint(&fg, egui::Rect::from_center_size(egui::pos2(r.left() + 14.0, r.center().y), egui::vec2(14.0, 14.0)), icon(obj.kind), Color32::WHITE);
+            fg.galley(r.min + egui::vec2(26.0, 4.0), galley, Color32::WHITE);
+        }
+        if over && ctx.input(|i| i.pointer.any_released()) {
+            let conn = self.cfg(&obj.conn).map(|c| c.name.clone()).unwrap_or_else(|| obj.conn.clone());
+            let db = match &obj.schema {
+                Some(sch) if !obj.db.is_empty() => format!("{}.{sch}", obj.db),
+                Some(sch) => sch.clone(),
+                None => obj.db.clone(),
+            };
+            let text = match obj.kind {
+                ObjectKind::View => i18n::tf(format!("la vista `{}` (database `{db}`, connessione «{conn}»)", obj.name)),
+                _ => i18n::tf(format!("la tabella `{}` (database `{db}`, connessione «{conn}»)", obj.name)),
+            };
+            let js = format!("window.dbDrop && dbDrop({})", serde_json::Value::String(text));
+            self.embeds.eval(Slot::Chat, &js);
+            self.embeds.focus(Slot::Chat);
+        }
+    }
+
     /// The chat on the right (before the central panel: side panels go first).
     fn chat_pane(&mut self, root: &mut egui::Ui, frame: &eframe::Frame) {
         use crate::embed::Slot;
@@ -1887,7 +1931,7 @@ struct TreeRow {
 fn tree_row(ui: &mut egui::Ui, depth: usize, open: Option<bool>, icon: Ico, badge: Option<Color32>, label: &str, selected: bool) -> TreeRow {
     let h = 20.0;
     let w = ui.available_width().max(160.0);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click_and_drag());
     let x0 = rect.left() + 4.0 + depth as f32 * 16.0;
     let tri = egui::Rect::from_center_size(egui::pos2(x0 + 6.0, rect.center().y), egui::vec2(14.0, h));
     let toggled = open.is_some() && resp.clicked() && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| tri.contains(p));
@@ -1980,6 +2024,10 @@ fn objects_tree(
                     if r.resp.double_clicked() {
                         *open = Some(obj.clone());
                     }
+                    // onto the AI chat, to talk about it
+                    if matches!(obj.kind, ObjectKind::Table | ObjectKind::View) {
+                        r.resp.dnd_set_drag_payload(obj.clone());
+                    }
                     objects::object_menu(&r.resp, &obj, fav, actions);
                 }
             }
@@ -2018,6 +2066,7 @@ impl eframe::App for App {
         egui::Panel::bottom("status").exact_size(24.0).show(ui, |ui| self.status_bar(ui));
         egui::Panel::left("tree").resizable(true).default_size(250.0).min_size(160.0).show(ui, |ui| self.tree_ui(ui));
         self.chat_pane(ui, frame);
+        self.chat_drop(&ctx);
         egui::CentralPanel::default().show(ui, |ui| {
             self.tab_strip(ui);
             ui.add_space(2.0);

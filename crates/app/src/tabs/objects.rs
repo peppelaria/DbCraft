@@ -151,7 +151,7 @@ pub fn ui(
     let n = cols.len();
     // wider than the window: it scrolls sideways, as Navicat's list
     egui::ScrollArea::horizontal().id_salt("objects_h").show(ui, |ui| {
-    let mut table = egui_extras::TableBuilder::new(ui).striped(true).resizable(true).sense(egui::Sense::click()).auto_shrink([false, false]);
+    let mut table = egui_extras::TableBuilder::new(ui).striped(true).resizable(true).sense(egui::Sense::click_and_drag()).auto_shrink([false, false]);
     for (i, (_, c)) in cols.iter().enumerate() {
         table = table.column(match c {
             Col::Name => egui_extras::Column::initial(220.0).at_least(120.0).clip(true),
@@ -213,6 +213,10 @@ pub fn ui(
                 }
                 if resp.double_clicked() && matches!(o.kind, ObjectKind::Table | ObjectKind::View) {
                     env.actions.push(Action::OpenTable(obj.clone()));
+                }
+                // onto the AI chat, to talk about it
+                if matches!(o.kind, ObjectKind::Table | ObjectKind::View) {
+                    resp.dnd_set_drag_payload(obj.clone());
                 }
                 object_menu(&resp, &obj, fav, env.actions);
             });

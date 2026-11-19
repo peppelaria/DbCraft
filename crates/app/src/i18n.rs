@@ -412,6 +412,11 @@ mod tests {
         assert_eq!(p.apply("«Note» sulla lavagna: puoi scriverci sopra", "“{t}” on the board").unwrap(), "“Note” on the board");
         assert!(p.apply("altro testo", "x").is_none());
         // ordine diverso nella traduzione: si va per nome
+        let p = Pattern::new("la tabella `{}` (database `{}`, connessione «{}»)").unwrap();
+        assert_eq!(
+            p.apply("la tabella `elenco_localita` (database `legacy_mga`, connessione «crm-mga»)", "the table `{}` (database `{}`, connection «{}»)").unwrap(),
+            "the table `elenco_localita` (database `legacy_mga`, connection «crm-mga»)"
+        );
         let p = Pattern::new("{a} di {b} pagine").unwrap();
         assert_eq!(p.apply("2 di 5 pagine", "{b}ページ中{a}").unwrap(), "5ページ中2");
         // parentesi raddoppiate
