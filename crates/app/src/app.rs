@@ -497,7 +497,7 @@ impl App {
             Msg::DumpProgress { tab: None, .. } => {}
             other => {
                 let tab = match &other {
-                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::QueryMeta { tab, .. } | Msg::QueryColumns { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } | Msg::Catalog { tab, .. } | Msg::Model { tab, .. } => *tab,
+                    Msg::TableData { tab, .. } | Msg::Applied { tab, .. } | Msg::QueryDone { tab, .. } | Msg::ResultTable { tab, .. } | Msg::QueryMeta { tab, .. } | Msg::QueryColumns { tab, .. } | Msg::BuilderTables { tab, .. } | Msg::BuilderTable { tab, .. } | Msg::DesignLoaded { tab, .. } | Msg::DesignSaved { tab, .. } | Msg::Catalog { tab, .. } | Msg::Model { tab, .. } => *tab,
                     Msg::DumpProgress { tab: Some(tab), .. } | Msg::Dumped { tab: Some(tab), .. } => *tab,
                     _ => return,
                 };
@@ -1861,6 +1861,7 @@ impl App {
         if let Some(sql) = self.cli.query.take() {
             let id = self.next_id;
             let mut tab = QueryTab::new(id, loc);
+            tab.debug_edit = self.cli.table_ui.iter().any(|f| f == "edit");
             tab.set_sql(sql, true);
             self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
         }

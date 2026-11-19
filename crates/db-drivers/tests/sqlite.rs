@@ -72,4 +72,20 @@ async fn sqlite_roundtrip() {
     let bad = drv.apply_changes(None, "people", &[RowChange::Delete { key: vec![("id".into(), Value::Int(2))] }, RowChange::Insert { values: vec![("nope".into(), Value::Int(1))] }]).await;
     assert!(bad.is_err());
     assert_eq!(drv.count_rows(None, "people", None).await.unwrap(), 2);
+
+    // A change that would touch more than one row (a key that is not unique) saves nothing.
+    drv.execute("UPDATE people SET score = 5").await.unwrap();
+    let wide = drv
+        .apply_changes(
+            None,
+            "people",
+            &[
+                RowChange::Update { key: vec![("id".into(), Value::Int(2))], set: vec![("name".into(), Value::Text("first".into()))] },
+                RowChange::Update { key: vec![("score".into(), Value::Int(5))], set: vec![("name".into(), Value::Text("all".into()))] },
+            ],
+        )
+        .await;
+    assert!(wide.is_err_and(|e| e.to_string().contains("invece di una")));
+    let names = drv.execute("SELECT name FROM people WHERE name IN ('first', 'all')").await.unwrap();
+    assert!(names[0].rows.is_empty());
 }

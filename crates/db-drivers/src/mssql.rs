@@ -215,7 +215,8 @@ impl Driver for MssqlDriver {
         let mut batch = String::from("SET XACT_ABORT ON; BEGIN TRANSACTION;\n");
         for c in changes {
             batch.push_str(&d.change_sql(schema, table, c));
-            batch.push_str(";\n");
+            // one record per change: more rows roll everything back (XACT_ABORT)
+            batch.push_str(";\nIF @@ROWCOUNT > 1 THROW 50000, N'Più di una riga interessata da una modifica: nessuna modifica salvata', 1;\n");
         }
         batch.push_str("COMMIT;");
         let mut client = self.client.lock().await;

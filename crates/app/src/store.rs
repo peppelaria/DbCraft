@@ -67,8 +67,13 @@ pub fn load() -> Vec<ConnectionConfig> {
     let Some(p) = path() else { return Vec::new() };
     let Ok(text) = std::fs::read_to_string(p) else { return Vec::new() };
     let mut v: Vec<ConnectionConfig> = serde_json::from_str(&text).unwrap_or_default();
+    let legacy = legacy_entries(&v);
+    // no saved secrets to fill in: the keychain isn't touched (no prompt)
+    if legacy.is_empty() {
+        return v;
+    }
     let mut vault = VAULT.lock().unwrap_or_else(|e| e.into_inner());
-    let vault = vault.get_or_insert_with(|| Vault::open(&OsKeychain, &legacy_entries(&v)));
+    let vault = vault.get_or_insert_with(|| Vault::open(&OsKeychain, &legacy));
     for c in &mut v {
         vault.fill(c);
     }

@@ -5,7 +5,7 @@
 use crate::dialect::Dialect;
 
 #[derive(Clone, Debug, PartialEq)]
-enum Tok {
+pub(crate) enum Tok {
     Space,
     Word(String),
     /// Strings, quoted identifiers, numbers, dollar-quoted bodies: copied verbatim.
@@ -15,7 +15,7 @@ enum Tok {
     Op(String),
 }
 
-fn tokenize(sql: &str, d: Dialect) -> Vec<Tok> {
+pub(crate) fn tokenize(sql: &str, d: Dialect) -> Vec<Tok> {
     let chars: Vec<char> = sql.chars().collect();
     let n = chars.len();
     let mut out = Vec::new();

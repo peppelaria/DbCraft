@@ -65,6 +65,14 @@ pub trait GridModel {
     fn editable(&self) -> bool {
         false
     }
+    /// Whether the cells of this column can be edited (when the model is editable).
+    fn column_editable(&self, _col: usize) -> bool {
+        true
+    }
+    /// Whether records can be added and deleted (when the model is editable).
+    fn rows_editable(&self) -> bool {
+        true
+    }
 }
 
 /// A simple in-memory model, handy for demos and tests.

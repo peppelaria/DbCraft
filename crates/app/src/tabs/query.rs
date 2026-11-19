@@ -5,16 +5,17 @@
 use crate::icons::{self, Db, G};
 use std::time::Instant;
 
+use db_core::editable::{SelectSource, select_source};
 use db_core::split::statement_at;
-use db_core::{DbKind, Dialect, ResultSet};
-use dbgrid::{DataGrid, GridColumn};
+use db_core::{DbKind, Dialect, ResultSet, RowChange, TableInfo, Value};
+use dbgrid::{ColumnKind, DataGrid, GridColumn};
 use egui::text::{CCursor, CCursorRange};
 use egui::{Key, Modifiers, RichText};
 
 use crate::app::{Action, Env, Location};
 use crate::backend::{Msg, TabId};
 use crate::dialogs::ExportSource;
-use crate::models::{ResultModel, grid_columns};
+use crate::models::{Edits, ResultModel, grid_columns};
 use crate::tabs::builder::{BuilderRequest, QueryBuilder};
 use crate::tabs::complete::{self, Catalog, Item, Kind};
 use crate::i18n;
@@ -24,6 +25,35 @@ struct ResultView {
     rs: ResultSet,
     columns: Vec<GridColumn>,
     grid: DataGrid,
+    /// Set when the cells can be edited (see [`ResultEdit`]).
+    edit: Option<ResultEdit>,
+    edits: Edits,
+}
+
+/// An editable result: the rows of a single-table `SELECT` that includes the table's key.
+/// Edits become `UPDATE table SET <changed columns> WHERE <key> = <value of that row>`, one per
+/// row, shown before they run and applied in one transaction that fails if any of them touches
+/// more than one row.
+struct ResultEdit {
+    schema: Option<String>,
+    table: String,
+    /// Result column → table column, for the key.
+    key: Vec<(usize, String)>,
+    /// Result column → table column, for every editable column (`None`: read-only).
+    cols: Vec<Option<String>>,
+    /// The same, as the grid wants it.
+    editable: Vec<bool>,
+}
+
+/// What the query tab knows about whether its result can be edited.
+enum Editing {
+    /// Not a single-table `SELECT` (or nothing ran yet).
+    No,
+    /// Reading the table's columns and key.
+    Checking,
+    Yes(String),
+    /// A single-table `SELECT` that can't be edited, and why.
+    ReadOnly(String),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -91,6 +121,14 @@ pub struct QueryTab {
     dbs: Vec<String>,
     schemas: Vec<String>,
     complete_when_ready: bool,
+    /// The table the running `SELECT` reads (for editing its result).
+    source: Option<SelectSource>,
+    editing: Editing,
+    saving: bool,
+    /// The statements of "Save", waiting for confirmation.
+    confirm: Option<Vec<String>>,
+    /// Scripted (`--query … --table-ui edit`): edit the first editable cell and ask to save.
+    pub debug_edit: bool,
 }
 
 fn changes_schema(sql: &str) -> bool {
@@ -185,6 +223,11 @@ impl QueryTab {
             dbs: Vec::new(),
             schemas: Vec::new(),
             complete_when_ready: false,
+            source: None,
+            editing: Editing::No,
+            saving: false,
+            confirm: None,
+            debug_edit: false,
         }
     }
 
@@ -215,7 +258,14 @@ impl QueryTab {
         if sql.trim().is_empty() || self.running.is_some() {
             return;
         }
+        if self.results.iter().any(|v| !v.edits.is_empty()) || self.saving {
+            env.actions.push(Action::Notice("Salva o annulla le modifiche ai risultati prima di eseguire di nuovo".into(), true));
+            return;
+        }
         let explain = what == Run::Explain;
+        self.source = if explain { None } else { select_source(&sql, d) };
+        self.editing = Editing::No;
+        self.confirm = None;
         self.running = Some(Instant::now());
         self.explain = explain;
         self.messages.push((format!("> {}{}", if explain { "EXPLAIN " } else { "" }, sql.trim()), false));
@@ -379,6 +429,16 @@ impl QueryTab {
                 }
                 return;
             }
+            Msg::ResultTable { run, res, .. } => {
+                if run == self.run_id {
+                    self.on_result_table(res);
+                }
+                return;
+            }
+            Msg::Applied { res, .. } => {
+                self.on_applied(res, env);
+                return;
+            }
             Msg::BuilderTable { name, res, .. } => {
                 if let Some(b) = self.builder.as_mut() {
                     b.on_table_info(&name, res);
@@ -408,13 +468,18 @@ impl QueryTab {
                         let columns = grid_columns(&rs, None);
                         let i = views.len();
                         let label = if explain { "Explain".to_string() } else { i18n::tf(format!("Risultato {}", i + 1)) };
-                        views.push(ResultView { label, rs, columns, grid: DataGrid::new(("result", self.id, i, self.messages.len())) });
+                        views.push(ResultView { label, rs, columns, grid: DataGrid::new(("result", self.id, i, self.messages.len())), edit: None, edits: Edits::default() });
                     }
                 }
                 self.messages.push((format!("Tempo: {:.3}s", elapsed.as_secs_f64()), false));
                 self.active_result = if views.is_empty() { 0 } else { 1 };
                 self.last = format!("{} risultati — {:.3}s", views.len(), elapsed.as_secs_f64());
+                // one result from a single-table SELECT: find out whether it can be edited
+                let source = self.source.take().filter(|_| views.len() == 1);
                 self.results = views;
+                if let Some(src) = source {
+                    self.check_editable(src, env);
+                }
             }
             Err(e) => {
                 self.messages.push((e.to_string(), true));
@@ -422,6 +487,220 @@ impl QueryTab {
                 self.active_result = 0;
                 self.last = "Errore".into();
             }
+        }
+    }
+
+    // ----- editing the result -----
+
+    /// Reads the table a single-table `SELECT` comes from, to see whether its result can be edited.
+    fn check_editable(&mut self, src: SelectSource, env: &mut Env<'_>) {
+        let Some(cfg) = env.cfg(&self.loc.conn).cloned() else { return };
+        // the schema the table is in, as `describe_table` and the UPDATE want it
+        let schema = match (Dialect::from(cfg.kind), src.schema.clone()) {
+            (Dialect::MySql, Some(db)) if !db.eq_ignore_ascii_case(&self.loc.db) => {
+                self.editing = Editing::ReadOnly(i18n::tf(format!("la tabella è in un altro database ({db})")));
+                return;
+            }
+            (Dialect::Sqlite, Some(s)) if !s.eq_ignore_ascii_case("main") => {
+                self.editing = Editing::ReadOnly(i18n::tf(format!("la tabella è in un altro database ({s})")));
+                return;
+            }
+            (Dialect::MySql | Dialect::Sqlite, _) => None,
+            (Dialect::Postgres, s) => s.or_else(|| self.loc.schema.clone()),
+            (Dialect::SqlServer, s) => s,
+        };
+        self.editing = Editing::Checking;
+        let (tab, run, table, sch) = (self.id, self.run_id, src.table.clone(), schema.clone());
+        self.source = Some(SelectSource { schema, ..src });
+        env.backend.with_driver(&cfg, &self.loc.db, move |d| async move {
+            let res = match d {
+                Ok(d) => d.describe_table(sch.as_deref(), &table).await,
+                Err(e) => Err(e),
+            };
+            Msg::ResultTable { tab, run, res }
+        });
+    }
+
+    /// The table's structure arrived: the result is editable if it holds the table's key (the
+    /// primary key, or else a unique index on NOT NULL columns).
+    fn on_result_table(&mut self, res: db_core::DbResult<TableInfo>) {
+        let Some(src) = self.source.take() else { return };
+        let Some(v) = self.results.first_mut() else { return };
+        let info = match res {
+            Ok(i) if !i.columns.is_empty() => i,
+            Ok(_) => {
+                self.editing = Editing::ReadOnly(i18n::tf(format!("tabella \"{}\" non trovata", src.table)));
+                return;
+            }
+            Err(e) => {
+                self.editing = Editing::ReadOnly(i18n::tf(format!("struttura della tabella non letta: {e}")));
+                return;
+            }
+        };
+        let table_cols: Vec<String> = info.columns.iter().map(|c| c.name.clone()).collect();
+        let names: Vec<String> = v.rs.columns.iter().map(|c| c.name.clone()).collect();
+        let mapped = src.map_columns(&names, &table_cols);
+        let pk = info.primary_key();
+        let not_null = |c: &String| info.columns.iter().any(|x| &x.name == c && !x.nullable);
+        let unique = info.indexes.iter().filter(|i| i.unique && !i.columns.is_empty() && i.columns.iter().all(not_null)).map(|i| i.columns.clone());
+        let find = |col: &String| mapped.iter().position(|m| m.as_ref() == Some(col)).map(|i| (i, col.clone()));
+        let key = std::iter::once(pk.clone()).filter(|k| !k.is_empty()).chain(unique).find_map(|k| k.iter().map(find).collect::<Option<Vec<_>>>());
+        let Some(key) = key else {
+            self.editing = Editing::ReadOnly(if pk.is_empty() {
+                i18n::tf(format!("la tabella \"{}\" non ha una chiave primaria", src.table))
+            } else {
+                i18n::tf(format!("nei risultati manca la chiave primaria ({})", pk.join(", ")))
+            });
+            return;
+        };
+        // the key identifies the row: it stays as it is; binary columns aren't edited as text
+        let cols: Vec<Option<String>> = mapped
+            .iter()
+            .enumerate()
+            .map(|(i, m)| m.clone().filter(|_| !key.iter().any(|(k, _)| *k == i) && v.columns.get(i).is_some_and(|c| c.kind != ColumnKind::Binary)))
+            .collect();
+        for (i, _) in &key {
+            if let Some(c) = v.columns.get_mut(*i) {
+                c.primary_key = true;
+            }
+        }
+        if cols.iter().all(Option::is_none) {
+            self.editing = Editing::ReadOnly(i18n::t("nessuna colonna modificabile").to_string());
+            return;
+        }
+        let table = match &src.schema {
+            Some(s) => format!("{s}.{}", info.name),
+            None => info.name.clone(),
+        };
+        self.editing = Editing::Yes(table);
+        let editable: Vec<bool> = cols.iter().map(Option::is_some).collect();
+        let first = editable.iter().position(|e| *e);
+        v.edit = Some(ResultEdit { schema: src.schema, table: info.name, key, cols, editable });
+        if self.debug_edit && let Some(c) = first {
+            Self::set_result_cell(v, 0, c, Some("Modificato".into()));
+        }
+    }
+
+    /// "Save": shows the statements the pending edits will run.
+    fn ask_save(&mut self, env: &Env<'_>) {
+        let Some(v) = self.results.iter().find(|v| !v.edits.is_empty()) else { return };
+        let (Some(e), Some(cfg)) = (&v.edit, env.cfg(&self.loc.conn)) else { return };
+        let d = Dialect::from(cfg.kind);
+        let statements: Vec<String> = Self::result_changes(v).iter().map(|c| d.change_sql(e.schema.as_deref(), &e.table, c)).collect();
+        if !statements.is_empty() {
+            self.confirm = Some(statements);
+        }
+    }
+
+    /// The UPDATE statements for the pending edits of a result.
+    fn result_changes(v: &ResultView) -> Vec<RowChange> {
+        let Some(e) = &v.edit else { return Vec::new() };
+        let mut rows: Vec<usize> = v.edits.cells.keys().map(|k| k.0).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        rows.into_iter()
+            .filter_map(|r| {
+                let row = v.rs.rows.get(r)?;
+                let key = e.key.iter().map(|(i, name)| Some((name.clone(), row.get(*i)?.clone()))).collect::<Option<Vec<_>>>()?;
+                let mut set: Vec<(usize, Value)> = v.edits.cells.iter().filter(|(k, _)| k.0 == r).map(|(k, val)| (k.1, val.clone())).collect();
+                set.sort_by_key(|x| x.0);
+                let set: Vec<(String, Value)> = set.into_iter().filter_map(|(c, val)| Some((e.cols.get(c)?.clone()?, val))).collect();
+                (!set.is_empty()).then_some(RowChange::Update { key, set })
+            })
+            .collect()
+    }
+
+    /// A cell of the result was edited in the grid.
+    fn set_result_cell(v: &mut ResultView, row: usize, col: usize, value: Option<String>) {
+        if !v.edit.as_ref().is_some_and(|e| e.editable.get(col).copied().unwrap_or(false)) {
+            return;
+        }
+        let val = value.map_or(Value::Null, Value::Text);
+        let original = v.rs.rows.get(row).and_then(|r| r.get(col));
+        let same = original.is_some_and(|o| *o == val || (!o.is_null() && !val.is_null() && o.to_string() == val.to_string()));
+        if same {
+            v.edits.cells.remove(&(row, col));
+        } else {
+            v.edits.cells.insert((row, col), val);
+        }
+    }
+
+    /// Saves the confirmed edits of the result, in one transaction.
+    fn save_result(&mut self, env: &mut Env<'_>) {
+        let Some(cfg) = env.cfg(&self.loc.conn).cloned() else { return };
+        let Some(v) = self.results.iter().find(|v| !v.edits.is_empty()) else { return };
+        let Some(e) = &v.edit else { return };
+        let changes = Self::result_changes(v);
+        if changes.is_empty() {
+            return;
+        }
+        self.saving = true;
+        let (tab, schema, table) = (self.id, e.schema.clone(), e.table.clone());
+        env.backend.with_driver(&cfg, &self.loc.db, move |d| async move {
+            let res = match d {
+                Ok(d) => d.apply_changes(schema.as_deref(), &table, &changes).await,
+                Err(e) => Err(e),
+            };
+            Msg::Applied { tab, res }
+        });
+    }
+
+    fn on_applied(&mut self, res: db_core::DbResult<u64>, env: &mut Env<'_>) {
+        if !std::mem::take(&mut self.saving) {
+            return;
+        }
+        match res {
+            Ok(n) => {
+                // the saved values become the result's own
+                for v in &mut self.results {
+                    for ((r, c), val) in std::mem::take(&mut v.edits.cells) {
+                        if let Some(cell) = v.rs.rows.get_mut(r).and_then(|row| row.get_mut(c)) {
+                            *cell = val;
+                        }
+                    }
+                }
+                self.messages.push((format!("{n} record salvati"), false));
+                env.actions.push(Action::Notice(format!("{n} record salvati"), false));
+            }
+            Err(e) => {
+                self.messages.push((format!("Modifiche non salvate: {e}"), true));
+                env.actions.push(Action::Notice(format!("Modifiche non salvate: {e}"), true));
+            }
+        }
+    }
+
+    /// The statements of "Save", shown before they run.
+    fn confirm_ui(&mut self, ctx: &egui::Context, env: &mut Env<'_>) {
+        let Some(statements) = &self.confirm else { return };
+        let mut answer = None;
+        egui::Modal::new(egui::Id::unique(("result_save", self.id))).show(ctx, |ui| {
+            ui.set_max_width(720.0);
+            ui.heading(i18n::t("Salvare le modifiche?"));
+            ui.add_space(4.0);
+            ui.label(i18n::tf(format!("Istruzioni da eseguire in una transazione ({}). Se una di esse interessa più di una riga, non viene salvato niente.", statements.len())));
+            ui.add_space(6.0);
+            egui::ScrollArea::both().max_height(320.0).auto_shrink([false, true]).show(ui, |ui| {
+                for s in statements {
+                    ui.add(egui::Label::new(RichText::new(format!("{s};")).monospace()).wrap_mode(egui::TextWrapMode::Extend));
+                }
+            });
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.add(crate::theme::primary(i18n::t("Salva"))).clicked() {
+                    answer = Some(true);
+                }
+                if ui.button(i18n::t("Annulla")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    answer = Some(false);
+                }
+            });
+        });
+        match answer {
+            Some(true) => {
+                self.confirm = None;
+                self.save_result(env);
+            }
+            Some(false) => self.confirm = None,
+            None => {}
         }
     }
 
@@ -566,6 +845,7 @@ impl QueryTab {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, env: &mut Env<'_>) {
+        self.confirm_ui(&ui.ctx().clone(), env);
         if self.show_builder {
             let done = self.builder.as_mut().and_then(|b| b.ui(ui));
             self.builder_requests(env);
@@ -801,19 +1081,59 @@ impl QueryTab {
                 ui.selectable_value(&mut self.active_result, i + 1, v.label.as_str());
             }
             if let Some(v) = self.active_result.checked_sub(1).and_then(|i| self.results.get(i)) {
+                let mut save = false;
+                let mut discard = false;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if icons::button(ui, Db::Export, "Esporta risultato").clicked() {
                         env.actions.push(Action::Export(ExportSource::Rows(Box::new(v.rs.clone()), "risultato".into(), self.loc.conn.clone())));
                     }
                     ui.label(RichText::new(i18n::tf(format!("{} righe", v.rs.rows.len()))).small());
+                    if !v.edits.is_empty() {
+                        ui.separator();
+                        if ui.add_enabled(!self.saving, egui::Button::new(i18n::t("Annulla modifiche"))).clicked() {
+                            discard = true;
+                        }
+                        if ui.add_enabled(!self.saving, crate::theme::primary(i18n::t("Salva"))).clicked() {
+                            save = true;
+                        }
+                        ui.label(RichText::new(i18n::tf(format!("{} modifiche in sospeso", v.edits.count()))).small().strong());
+                    }
+                    if self.active_result == 1 {
+                        ui.separator();
+                        match &self.editing {
+                            Editing::Yes(t) => {
+                                ui.label(RichText::new(i18n::tf(format!("Modificabile: tabella {t}"))).small())
+                                    .on_hover_text(i18n::t("Doppio clic su una cella per modificarla. Le modifiche si salvano con «Salva», una riga alla volta tramite la sua chiave."));
+                            }
+                            Editing::ReadOnly(why) => {
+                                ui.label(RichText::new(i18n::tf(format!("Sola lettura: {why}"))).small().weak());
+                            }
+                            Editing::Checking | Editing::No => {}
+                        }
+                    }
                 });
+                if save || (self.debug_edit && !v.edits.is_empty()) {
+                    self.debug_edit = false;
+                    self.ask_save(env);
+                }
+                if discard && let Some(v) = self.active_result.checked_sub(1).and_then(|i| self.results.get_mut(i)) {
+                    v.edits = Edits::default();
+                }
             }
         });
         ui.separator();
         match self.active_result.checked_sub(1).and_then(|i| self.results.get_mut(i)) {
             Some(v) => {
-                let model = ResultModel { rs: &v.rs, columns: &v.columns };
-                let _ = v.grid.show(ui, &model);
+                let events = {
+                    let edit = v.edit.as_ref().filter(|_| !self.saving).map(|e| (&v.edits, e.editable.as_slice()));
+                    let model = ResultModel { rs: &v.rs, columns: &v.columns, edit };
+                    v.grid.show(ui, &model)
+                };
+                for ev in events {
+                    if let dbgrid::GridEvent::CellEdited { row, col, value } = ev {
+                        Self::set_result_cell(v, row, col, value);
+                    }
+                }
             }
             None => {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {

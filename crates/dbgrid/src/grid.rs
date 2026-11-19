@@ -368,7 +368,7 @@ impl DataGrid {
 
         if resp.double_clicked() && geo.in_cells(p) && nrows > 0 {
             let (r, c) = (geo.row_at(p.y), geo.col_at(p.x));
-            if model.editable() {
+            if model.editable() && model.column_editable(c as usize) {
                 self.start_edit(model, r, c, None);
             } else {
                 events.push(GridEvent::Activated { row: r as usize, col: c as usize });
@@ -424,7 +424,7 @@ impl DataGrid {
     /// The calendar button on the active date/time cell and its picker popup.
     fn date_picker(&mut self, ui: &mut egui::Ui, geo: &Geo, model: &dyn GridModel, events: &mut Vec<GridEvent>) {
         let (r, c) = self.sel.active;
-        let editable = model.editable();
+        let editable = model.editable() && model.column_editable(c as usize);
         // Alt+↓ while typing in the cell opens the picker too.
         if editable && self.edit.as_ref().is_some_and(|e| e.row == r && e.col == c) && ui.input(|i| i.modifiers.alt && i.key_pressed(Key::ArrowDown)) {
             self.picker = Some((r, c));
@@ -513,7 +513,7 @@ impl DataGrid {
             let before = (r, c);
             match key {
                 Key::ArrowDown if mods.alt => {
-                    if model.editable() && self.date_kind(model, c).is_some() {
+                    if model.editable() && model.column_editable(c as usize) && self.date_kind(model, c).is_some() {
                         self.picker = Some((r, c));
                     }
                     return;
@@ -538,7 +538,7 @@ impl DataGrid {
                     self.start_edit(model, r, c, None);
                     return;
                 }
-                Key::Delete | Key::Backspace if mods.command && model.editable() => {
+                Key::Delete | Key::Backspace if mods.command && model.editable() && model.rows_editable() => {
                     events.push(GridEvent::DeleteRows(self.sel.rows(nrows, ncols)));
                     return;
                 }
@@ -599,7 +599,7 @@ impl DataGrid {
     }
 
     fn start_edit(&mut self, model: &dyn GridModel, row: u32, col: u32, typed: Option<String>) {
-        if !model.editable() || row as usize >= model.row_count() || col as usize >= model.columns().len() {
+        if !model.editable() || !model.column_editable(col as usize) || row as usize >= model.row_count() || col as usize >= model.columns().len() {
             return;
         }
         let cell = model.cell(row as usize, col as usize);
@@ -670,27 +670,29 @@ impl DataGrid {
                     self.edit = None;
                     if let Some((r0, c0, r1, c1)) = self.sel.bounds(nrows, ncols) {
                         for row in r0..=r1.min(r0 + 10_000) {
-                            for col in c0..=c1 {
+                            for col in (c0..=c1).filter(|c| model.column_editable(*c as usize)) {
                                 events.push(GridEvent::CellEdited { row: row as usize, col: col as usize, value: None });
                             }
                         }
                     }
                     ui.close();
                 }
-                if ui.button("Imposta a stringa vuota").clicked() {
+                if model.column_editable(c as usize) && ui.button("Imposta a stringa vuota").clicked() {
                     events.push(GridEvent::CellEdited { row: r as usize, col: c as usize, value: Some(String::new()) });
                     ui.close();
                 }
                 ui.separator();
-                if ui.button("Aggiungi record").clicked() {
-                    events.push(GridEvent::InsertRow);
-                    ui.close();
+                if model.rows_editable() {
+                    if ui.button("Aggiungi record").clicked() {
+                        events.push(GridEvent::InsertRow);
+                        ui.close();
+                    }
+                    if ui.button("Elimina record").clicked() {
+                        events.push(GridEvent::DeleteRows(self.sel.rows(nrows, ncols)));
+                        ui.close();
+                    }
+                    ui.separator();
                 }
-                if ui.button("Elimina record").clicked() {
-                    events.push(GridEvent::DeleteRows(self.sel.rows(nrows, ncols)));
-                    ui.close();
-                }
-                ui.separator();
             }
             if (c as usize) < model.columns().len() {
                 if ui.button("Ordina crescente").clicked() {

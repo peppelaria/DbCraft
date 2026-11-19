@@ -17,6 +17,8 @@ pub enum Msg {
     TableData { tab: TabId, info: Option<DbResult<TableInfo>>, page: DbResult<ResultSet>, total: Option<u64> },
     Applied { tab: TabId, res: DbResult<u64> },
     QueryDone { tab: TabId, run: u64, res: DbResult<Vec<ResultSet>> },
+    /// The table a query result comes from (to edit the result).
+    ResultTable { tab: TabId, run: u64, res: DbResult<TableInfo> },
     /// Code completion metadata: databases, schemas and objects of a query tab's location.
     QueryMeta { tab: TabId, generation: u64, dbs: Option<DbResult<Vec<String>>>, schemas: Option<DbResult<Vec<String>>>, objects: DbResult<Vec<SchemaObject>> },
     QueryColumns { tab: TabId, generation: u64, table: String, res: DbResult<TableInfo> },

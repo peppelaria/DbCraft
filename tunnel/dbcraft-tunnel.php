@@ -217,7 +217,13 @@ if ($action === 'apply') {
     try {
         $pdo->beginTransaction();
         foreach ($statements as $sql) {
-            $affected += (int)$pdo->exec((string)$sql);
+            $n = (int)$pdo->exec((string)$sql);
+            // every change is about one record: more rows means a key that is not unique
+            if ($n > 1) {
+                $pdo->rollBack();
+                reply(200, ['ok' => false, 'error' => "$n righe interessate invece di una, nessuna modifica salvata: $sql"]);
+            }
+            $affected += $n;
         }
         $pdo->commit();
     } catch (PDOException $e) {

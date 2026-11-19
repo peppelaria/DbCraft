@@ -64,8 +64,14 @@ where
     let mut tx = pool.begin().await.map_err(err)?;
     let mut total = 0;
     for s in statements {
-        let r = sqlx::raw_sql(AssertSqlSafe(s)).execute(&mut *tx).await.map_err(err)?;
-        total += affected(&r);
+        let r = sqlx::raw_sql(AssertSqlSafe(s.clone())).execute(&mut *tx).await.map_err(err)?;
+        let n = affected(&r);
+        // every change is about one record: touching more means its key is not unique, so
+        // nothing is saved (dropping `tx` rolls back)
+        if n > 1 {
+            return Err(DbError::Query(format!("{n} righe interessate invece di una, nessuna modifica salvata: {s}")));
+        }
+        total += n;
     }
     tx.commit().await.map_err(err)?;
     Ok(total)

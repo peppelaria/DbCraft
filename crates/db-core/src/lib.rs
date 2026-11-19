@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod dialect;
+pub mod editable;
 pub mod format;
 pub mod split;
 pub mod schema;

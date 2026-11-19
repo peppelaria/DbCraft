@@ -61,10 +61,13 @@ fn view(v: &Value) -> CellView<'_> {
     }
 }
 
-/// Read-only view over a query result.
+/// A query result: read-only, or with some columns editable (a single-table `SELECT`, see
+/// `tabs::query`). Only cells can change: no records are added or deleted.
 pub struct ResultModel<'a> {
     pub rs: &'a ResultSet,
     pub columns: &'a [GridColumn],
+    /// Pending edits and which columns can be edited.
+    pub edit: Option<(&'a Edits, &'a [bool])>,
 }
 
 impl GridModel for ResultModel<'_> {
@@ -75,7 +78,25 @@ impl GridModel for ResultModel<'_> {
         self.columns
     }
     fn cell(&self, row: usize, col: usize) -> CellView<'_> {
+        if let Some(v) = self.edit.and_then(|(e, _)| e.cells.get(&(row, col))) {
+            return CellView { dirty: true, ..view(v) };
+        }
         self.rs.rows.get(row).and_then(|r| r.get(col)).map_or_else(CellView::null, view)
+    }
+    fn row_state(&self, row: usize) -> RowState {
+        match self.edit {
+            Some((e, _)) if e.cells.keys().any(|k| k.0 == row) => RowState::Modified,
+            _ => RowState::Normal,
+        }
+    }
+    fn editable(&self) -> bool {
+        self.edit.is_some()
+    }
+    fn column_editable(&self, col: usize) -> bool {
+        self.edit.is_some_and(|(_, cols)| cols.get(col).copied().unwrap_or(false))
+    }
+    fn rows_editable(&self) -> bool {
+        false
     }
 }
 
