@@ -32,7 +32,17 @@ mod web;
 fn window_icon() -> egui::IconData {
     image::load_from_memory(include_bytes!("../assets/icon.png"))
         .map(|i| {
-            let rgba = i.to_rgba8();
+            let mut rgba = i.to_rgba8();
+            // eframe hands the pixels to AppKit as a premultiplied NSBitmapImageRep: straight alpha would show the
+            // (white) colour of the transparent pixels as a white square behind the icon in the Dock.
+            if cfg!(target_os = "macos") {
+                for p in rgba.pixels_mut() {
+                    let a = u16::from(p[3]);
+                    for c in &mut p.0[..3] {
+                        *c = ((u16::from(*c) * a + 127) / 255) as u8;
+                    }
+                }
+            }
             egui::IconData { width: rgba.width(), height: rgba.height(), rgba: rgba.into_raw() }
         })
         .unwrap_or_default()

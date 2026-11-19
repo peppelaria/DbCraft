@@ -178,6 +178,9 @@ pub struct App {
     /// macOS: the native menu bar (kept alive).
     #[cfg(target_os = "macos")]
     _mac_menu: Option<muda::Menu>,
+    /// macOS: the Cmd shortcuts the «Edit» menu takes away from egui (see [`MenuKeys`]).
+    #[cfg(target_os = "macos")]
+    menu_keys: MenuKeys,
 }
 
 pub fn icon(kind: ObjectKind) -> Db {
@@ -262,6 +265,8 @@ impl App {
             settings_rect: None,
             #[cfg(target_os = "macos")]
             _mac_menu: mac_menu(),
+            #[cfg(target_os = "macos")]
+            menu_keys: MenuKeys::default(),
         };
         // the AI chat: its server and its database tools on DbCraft's runtime
         crate::dbagent::set_runtime(app.backend.handle());
@@ -2113,6 +2118,11 @@ fn objects_tree(
 }
 
 impl eframe::App for App {
+    #[cfg(target_os = "macos")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.menu_keys.fix(ctx, raw);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         while let Ok(msg) = self.backend.rx.try_recv() {
@@ -2192,6 +2202,59 @@ impl eframe::App for App {
         self.notices_ui(&ctx);
         self.apply_actions();
         self.place_pages(&ctx, frame);
+    }
+}
+
+/// macOS: the «Edit» menu answers Cmd+X, Cmd+C, Cmd+V, Cmd+A and Cmd+Z itself (that's what the WebViews need),
+/// so DbCraft's own text fields (the passwords too) get only the key release: no cut, copy or paste. This turns
+/// such an orphan release back into what egui expects. In a WebView the keys never reach egui, so nothing doubles.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct MenuKeys {
+    /// Keys whose press egui did see (as a key or as the Cut / Copy / Paste it became).
+    down: Vec<egui::Key>,
+    /// A paste asked for here: its Paste event is ours, not a key press.
+    paste_pending: bool,
+}
+
+#[cfg(target_os = "macos")]
+impl MenuKeys {
+    fn fix(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        use egui::{Event, Key};
+        let mut out = Vec::with_capacity(raw.events.len());
+        for e in std::mem::take(&mut raw.events) {
+            match &e {
+                Event::Cut => self.press(Key::X),
+                Event::Copy => self.press(Key::C),
+                Event::Paste(_) if std::mem::take(&mut self.paste_pending) => {}
+                Event::Paste(_) => self.press(Key::V),
+                Event::Key { key: key @ (Key::X | Key::C | Key::V | Key::A | Key::Z), pressed: true, .. } => self.press(*key),
+                Event::Key { key: key @ (Key::X | Key::C | Key::V | Key::A | Key::Z), physical_key, pressed: false, modifiers, .. } => {
+                    if let Some(i) = self.down.iter().position(|k| k == key) {
+                        self.down.remove(i);
+                    } else if modifiers.command {
+                        match key {
+                            Key::X => out.push(Event::Cut),
+                            Key::C => out.push(Event::Copy),
+                            Key::V => {
+                                self.paste_pending = true;
+                                ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                            }
+                            _ => out.push(Event::Key { key: *key, physical_key: *physical_key, pressed: true, repeat: false, modifiers: *modifiers }),
+                        }
+                    }
+                }
+                _ => {}
+            }
+            out.push(e);
+        }
+        raw.events = out;
+    }
+
+    fn press(&mut self, key: egui::Key) {
+        if !self.down.contains(&key) {
+            self.down.push(key);
+        }
     }
 }
 
