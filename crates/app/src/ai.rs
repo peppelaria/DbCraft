@@ -1673,3 +1673,63 @@ pub fn describe(cfg: &AiConfig) -> Vec<(String, String)> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stream(pieces: &[&str]) -> (String, ThinkFilter) {
+        let mut f = ThinkFilter { cut_calls: true, ..Default::default() };
+        let shown: String = pieces.iter().filter_map(|p| f.push(p)).collect();
+        (shown, f)
+    }
+
+    #[test]
+    fn dsml_calls_hidden_and_parsed() {
+        let text = "Vedo 35 tabelle.\n\n<｜DSML｜function_calls>\n<｜DSML｜invoke name=\"db_query\">\n<｜DSML｜parameter name=\"sql\" string=\"true\">SELECT COUNT(*) n FROM t;</｜DSML｜parameter>\n<｜DSML｜parameter name=\"limit\" string=\"false\">5</｜DSML｜parameter>\n</｜DSML｜invoke>\n<｜DSML｜invoke name=\"db_tables\">\n</｜DSML｜invoke>\n</｜DSML｜function_calls>";
+        // a pezzi piccoli, anche a metà dei caratteri del segno
+        let pieces: Vec<String> = text.chars().collect::<Vec<_>>().chunks(3).map(|c| c.iter().collect()).collect();
+        let refs: Vec<&str> = pieces.iter().map(String::as_str).collect();
+        let (shown, f) = stream(&refs);
+        assert_eq!(shown.trim_end(), "Vedo 35 tabelle.");
+        let calls = text_calls(&f.full);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "db_query");
+        let a: serde_json::Value = serde_json::from_str(&calls[0].args).unwrap_or_default();
+        assert_eq!(a["sql"], "SELECT COUNT(*) n FROM t;");
+        assert_eq!(a["limit"], 5);
+        assert_eq!(calls[1].name, "db_tables");
+    }
+
+    #[test]
+    fn dsml_double_bars() {
+        let t = "Ok.\n<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name=\"db_query\">\n<｜｜DSML｜｜ parameter name=\"sql\" string=\"true\">SELECT 1;</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>";
+        let (shown, f) = stream(&[t]);
+        assert_eq!(shown.trim_end(), "Ok.");
+        let calls = text_calls(&f.full);
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].args.contains("SELECT 1;"));
+    }
+
+    #[test]
+    fn hermes_deepseek_mistral() {
+        let c = text_calls("x <tool_call>{\"name\": \"db_describe\", \"arguments\": {\"table\": \"users\"}}</tool_call>");
+        assert_eq!((c.len(), c[0].name.as_str()), (1, "db_describe"));
+        assert!(c[0].args.contains("users"));
+        let c = text_calls("<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>db_query\n```json\n{\"sql\": \"SELECT 2\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>");
+        assert_eq!((c.len(), c[0].name.as_str()), (1, "db_query"));
+        assert!(c[0].args.contains("SELECT 2"));
+        let c = text_calls("[TOOL_CALLS][{\"name\": \"db_tables\", \"arguments\": {}}]");
+        assert_eq!((c.len(), c[0].name.as_str()), (1, "db_tables"));
+    }
+
+    #[test]
+    fn plain_text_untouched() {
+        let (shown, f) = stream(&["a < b and ", "c > d"]);
+        assert_eq!(shown, "a < b and c > d");
+        assert!(text_calls(&f.full).is_empty());
+        // senza strumenti nella richiesta il testo resta com'è
+        let mut f = ThinkFilter::default();
+        assert_eq!(f.push("<tool_call>{}</tool_call>").as_deref(), Some("<tool_call>{}</tool_call>"));
+    }
+}
