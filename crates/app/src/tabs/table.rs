@@ -472,7 +472,7 @@ impl TableTab {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for c in &self.columns {
                         let mut shown = !self.hidden.contains(&c.name);
-                        if ui.checkbox(&mut shown, &c.name).changed() {
+                        if crate::theme::checkbox(ui, &mut shown, &c.name).changed() {
                             if shown {
                                 self.hidden.remove(&c.name);
                             } else if self.hidden.len() + 1 < self.columns.len() {

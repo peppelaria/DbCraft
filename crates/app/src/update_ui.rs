@@ -171,9 +171,9 @@ impl Updater {
             ui.close();
         }
         ui.separator();
-        let mut changed = ui.checkbox(&mut self.settings.update_check, i18n::t("Avvisa quando c'è una versione nuova")).changed();
+        let mut changed = crate::theme::checkbox(ui, &mut self.settings.update_check, i18n::t("Avvisa quando c'è una versione nuova")).changed();
         changed |= ui
-            .add_enabled(self.settings.update_check, egui::Checkbox::new(&mut self.settings.update_auto, i18n::t("Installala da sola (si usa dal prossimo avvio)")))
+            .add_enabled(self.settings.update_check, crate::theme::check(&mut self.settings.update_auto, i18n::t("Installala da sola (si usa dal prossimo avvio)")))
             .changed();
         ui.label(RichText::new(i18n::t("Chiede a GitHub l'ultima release di DbCraft all'avvio;\nconnessioni e impostazioni restano anche aggiornando.")).small().weak());
         if changed {

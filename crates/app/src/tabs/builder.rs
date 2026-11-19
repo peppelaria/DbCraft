@@ -473,7 +473,7 @@ impl QueryBuilder {
                 ui.selectable_value(&mut self.pane, Pane::Conditions, i18n::t("Condizioni e ordinamento"));
                 ui.selectable_value(&mut self.pane, Pane::Sql, i18n::t("SQL"));
                 ui.separator();
-                ui.checkbox(&mut self.distinct, i18n::t("DISTINCT"));
+                crate::theme::checkbox(ui, &mut self.distinct, i18n::t("DISTINCT"));
                 ui.label(i18n::t("Limite"));
                 ui.add(egui::TextEdit::singleline(&mut self.limit).desired_width(60.0).hint_text(i18n::t("tutte")));
             });

@@ -152,7 +152,7 @@ impl ModelTab {
             if ui.button("100%").clicked() {
                 self.zoom = 1.0;
             }
-            ui.checkbox(&mut self.types, i18n::t("Tipi"));
+            crate::theme::checkbox(ui, &mut self.types, i18n::t("Tipi"));
             ui.separator();
             if icons::button_ex(ui, Db::Export, "Esporta SQL", false, matches!(self.tables, Some(Ok(_)))).clicked() {
                 self.export_sql(env);

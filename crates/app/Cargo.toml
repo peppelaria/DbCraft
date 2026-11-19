@@ -17,7 +17,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 dbgrid.workspace = true
 db-core.workspace = true
 db-drivers.workspace = true
-egui = { workspace = true, features = ["monochrome_emoji_fonts"] }
+egui = { workspace = true, features = ["monochrome_emoji_fonts", "experimental"] }  # experimental: widget themes (src/theme.rs)
 eframe.workspace = true
 egui_extras.workspace = true
 tokio.workspace = true

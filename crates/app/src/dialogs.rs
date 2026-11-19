@@ -150,7 +150,7 @@ impl ConnDialog {
                     });
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add_enabled(!self.cfg.name.trim().is_empty(), egui::Button::new(RichText::new(i18n::t("OK")).strong())).clicked() {
+                    if ui.add_enabled(!self.cfg.name.trim().is_empty(), crate::theme::primary(RichText::new(i18n::t("OK")).strong())).clicked() {
                         out = Some(ConnOutcome::Save(Box::new(self.cfg.clone())));
                     }
                     if ui.button(i18n::t("Annulla")).clicked() {
@@ -202,7 +202,7 @@ impl ConnDialog {
             ui.add(egui::TextEdit::singleline(&mut self.cfg.password).password(true).desired_width(280.0));
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut self.cfg.save_password, i18n::t("Salva password (Portachiavi)"));
+            crate::theme::checkbox(ui, &mut self.cfg.save_password, i18n::t("Salva password (Portachiavi)"));
             ui.end_row();
             ui.label(i18n::t("Database iniziale:"));
             ui.add(egui::TextEdit::singleline(&mut self.cfg.database).desired_width(280.0).hint_text(i18n::t("(facoltativo)")));
@@ -217,7 +217,7 @@ impl ConnDialog {
 
     fn ssl_ui(&mut self, ui: &mut egui::Ui) {
         let kind = self.cfg.kind;
-        ui.checkbox(&mut self.cfg.ssl, i18n::t("Usa SSL"));
+        crate::theme::checkbox(ui, &mut self.cfg.ssl, i18n::t("Usa SSL"));
         ui.label(
             RichText::new(i18n::t("Senza SSL la connessione è comunque cifrata se il server lo offre, ma il certificato non viene verificato e il server può rifiutare la cifratura."))
                 .small()
@@ -262,7 +262,7 @@ impl ConnDialog {
 
     fn http_ui(&mut self, ui: &mut egui::Ui) {
         let http_on = self.cfg.http.enabled;
-        if ui.checkbox(&mut self.cfg.http.enabled, i18n::t("Usa tunnel HTTP")).changed() && self.cfg.http.enabled {
+        if crate::theme::checkbox(ui, &mut self.cfg.http.enabled, i18n::t("Usa tunnel HTTP")).changed() && self.cfg.http.enabled {
             self.cfg.ssh.enabled = false;
         }
         ui.label(
@@ -286,7 +286,7 @@ impl ConnDialog {
                 ui.add(egui::TextEdit::singleline(&mut t.token).password(true).desired_width(240.0).hint_text(i18n::t("DBCRAFT_TUNNEL_TOKEN (se impostato)")));
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(&mut t.base64, i18n::t("Codifica le query in base64"));
+                crate::theme::checkbox(ui, &mut t.base64, i18n::t("Codifica le query in base64"));
                 ui.end_row();
             });
             ui.add_space(6.0);
@@ -296,7 +296,7 @@ impl ConnDialog {
             });
             egui::Frame::group(ui.style()).show(ui, |ui| match self.http_tab {
                 HttpTab::Auth => {
-                    ui.checkbox(&mut t.basic_auth, i18n::t("Usa autenticazione con password (HTTP Basic)"));
+                    crate::theme::checkbox(ui, &mut t.basic_auth, i18n::t("Usa autenticazione con password (HTTP Basic)"));
                     ui.add_enabled_ui(t.basic_auth, |ui| {
                         egui::Grid::new("http-auth").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
                             ui.label(i18n::t("Nome utente:"));
@@ -307,7 +307,7 @@ impl ConnDialog {
                             ui.end_row();
                         });
                     });
-                    ui.checkbox(&mut t.save_password, i18n::t("Salva password, token e password proxy (Portachiavi)"));
+                    crate::theme::checkbox(ui, &mut t.save_password, i18n::t("Salva password, token e password proxy (Portachiavi)"));
                     ui.separator();
                     ui.label(i18n::t("Autenticazione con certificato (HTTPS)"));
                     egui::Grid::new("http-cert").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
@@ -323,7 +323,7 @@ impl ConnDialog {
                     });
                 }
                 HttpTab::Proxy => {
-                    ui.checkbox(&mut t.proxy, i18n::t("Usa proxy"));
+                    crate::theme::checkbox(ui, &mut t.proxy, i18n::t("Usa proxy"));
                     ui.add_enabled_ui(t.proxy, |ui| {
                         egui::Grid::new("http-proxy").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
                             ui.label(i18n::t("Host:"));
@@ -353,7 +353,7 @@ impl ConnDialog {
             return;
         }
         let ssh = &mut self.cfg.ssh;
-        ui.checkbox(&mut ssh.enabled, i18n::t("Usa tunnel SSH"));
+        crate::theme::checkbox(ui, &mut ssh.enabled, i18n::t("Usa tunnel SSH"));
         ui.add_space(4.0);
         ui.add_enabled_ui(ssh.enabled, |ui| {
             egui::Grid::new("ssh-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
@@ -401,7 +401,7 @@ impl ConnDialog {
                 }
                 ui.label("");
                 let what = if ssh.auth == SshAuth::Password { "password" } else { "passphrase" };
-                ui.checkbox(&mut ssh.save_password, i18n::tf(format!("Salva {what} (Portachiavi)")));
+                crate::theme::checkbox(ui, &mut ssh.save_password, i18n::tf(format!("Salva {what} (Portachiavi)")));
                 ui.end_row();
             });
         });
@@ -464,7 +464,7 @@ impl ExportDialog {
             }
             ui.add_space(4.0);
             if self.format != Format::Json && self.format != Format::Sql {
-                ui.checkbox(&mut self.header, i18n::t("Includi intestazioni di colonna"));
+                crate::theme::checkbox(ui, &mut self.header, i18n::t("Includi intestazioni di colonna"));
             }
             ui.add_space(8.0);
             let mut keep = true;
@@ -610,8 +610,8 @@ impl ImportDialog {
             ui.horizontal(|ui| {
                 ui.label(i18n::t("Delimitatore:"));
                 let mut changed = ui.add(egui::TextEdit::singleline(&mut self.delimiter).desired_width(30.0)).changed();
-                changed |= ui.checkbox(&mut self.header, i18n::t("Prima riga = intestazioni")).changed();
-                ui.checkbox(&mut self.empty_null, i18n::t("Celle vuote = NULL"));
+                changed |= crate::theme::checkbox(ui, &mut self.header, i18n::t("Prima riga = intestazioni")).changed();
+                crate::theme::checkbox(ui, &mut self.empty_null, i18n::t("Celle vuote = NULL"));
                 if changed {
                     self.read();
                 }
@@ -654,7 +654,7 @@ impl ImportDialog {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let ready = self.data.is_some() && self.mapping.iter().any(Option::is_some) && !self.running;
-                    if ui.add_enabled(ready, egui::Button::new(RichText::new(i18n::t("Importa")).strong())).clicked() {
+                    if ui.add_enabled(ready, crate::theme::primary(RichText::new(i18n::t("Importa")).strong())).clicked() {
                         self.start(backend, configs);
                     }
                     if ui.button(i18n::t("Chiudi")).clicked() {

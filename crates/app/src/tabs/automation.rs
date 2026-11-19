@@ -299,7 +299,7 @@ impl AutomationTab {
                 });
                 ui.end_row();
                 ui.label("");
-                ui.checkbox(&mut job.enabled, i18n::t("Attiva"));
+                crate::theme::checkbox(ui, &mut job.enabled, i18n::t("Attiva"));
                 ui.end_row();
             });
             ui.add_space(4.0);
@@ -307,7 +307,7 @@ impl AutomationTab {
             ui.separator();
             let valid = !job.name.trim().is_empty() && !job.conn.is_empty() && !matches!(&job.action, JobAction::Query { sql } if sql.trim().is_empty());
             ui.horizontal(|ui| {
-                if ui.add_enabled(valid, egui::Button::new(i18n::t("Salva"))).clicked() {
+                if ui.add_enabled(valid, crate::theme::primary(i18n::t("Salva"))).clicked() {
                     save = true;
                 }
                 if ui.button(i18n::t("Annulla")).clicked() {

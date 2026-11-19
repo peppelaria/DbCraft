@@ -266,14 +266,14 @@ impl DesignerTab {
                             }
                         });
                     });
-                    ui.checkbox(&mut c.not_null, "");
+                    crate::theme::checkbox(ui, &mut c.not_null, "");
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut c.primary_key, "");
+                        crate::theme::checkbox(ui, &mut c.primary_key, "");
                         if c.primary_key {
                             icons::show(ui, Db::Key, 14.0);
                         }
                     });
-                    ui.checkbox(&mut c.auto_increment, "");
+                    crate::theme::checkbox(ui, &mut c.auto_increment, "");
                     ui.add_sized([200.0, h], egui::TextEdit::singleline(&mut c.default).hint_text(i18n::t("es. 0, 'abc', CURRENT_TIMESTAMP")));
                     ui.add_enabled_ui(self.dialect != Dialect::Sqlite && self.dialect != Dialect::SqlServer, |ui| ui.add_sized([200.0, h], egui::TextEdit::singleline(&mut c.comment)));
                     ui.end_row();
@@ -293,7 +293,7 @@ impl DesignerTab {
                 for (i, x) in self.design.indexes.iter_mut().enumerate() {
                     ui.add(egui::TextEdit::singleline(&mut x.name).desired_width(200.0));
                     ui.add(egui::TextEdit::singleline(&mut x.columns).desired_width(260.0));
-                    ui.checkbox(&mut x.unique, "");
+                    crate::theme::checkbox(ui, &mut x.unique, "");
                     if icons::small(ui, G::Delete, "Elimina", true).clicked() {
                         remove = Some(i);
                     }

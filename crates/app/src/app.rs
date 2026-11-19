@@ -1025,7 +1025,7 @@ impl App {
                 ui.separator();
                 ui.menu_button(i18n::t("Lingua"), |ui| self.language_menu(ui));
                 ui.menu_button(i18n::t("Dimensione di testo e controlli"), |ui| self.zoom_menu(ui));
-                ui.checkbox(&mut self.fav_only, i18n::t("Solo preferiti nell'albero"));
+                crate::theme::checkbox(ui, &mut self.fav_only, i18n::t("Solo preferiti nell'albero"));
                 let dark = ui.visuals().dark_mode;
                 if ui.button(if dark { i18n::t("Tema chiaro") } else { i18n::t("Tema scuro") }).clicked() {
                     ui.ctx().set_theme(if dark { egui::Theme::Light } else { egui::Theme::Dark });

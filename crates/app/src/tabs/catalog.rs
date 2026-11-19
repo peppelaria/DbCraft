@@ -532,7 +532,7 @@ impl CatalogTab {
                     });
                     egui::Grid::new("privs").num_columns(3).show(ui, |ui| {
                         for (i, (p, on)) in privs.iter_mut().enumerate() {
-                            ui.checkbox(on, *p);
+                            crate::theme::checkbox(ui, on, *p);
                             if i % 3 == 2 {
                                 ui.end_row();
                             }

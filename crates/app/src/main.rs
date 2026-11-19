@@ -23,6 +23,7 @@ mod models;
 mod selfupdate;
 mod store;
 mod tabs;
+mod theme;
 mod update;
 mod update_ui;
 mod vendor;
@@ -65,6 +66,7 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             cc.egui_ctx.set_theme(egui::Theme::Light);
             app::contrast(&cc.egui_ctx);
+            theme::install(&cc.egui_ctx);
             // the size of text and controls: the user's (Visualizza › Dimensione…, ⌘/Ctrl +/−/0),
             // handled by the app (egui's own keys would not be saved)
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);

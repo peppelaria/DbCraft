@@ -450,7 +450,7 @@ impl FilterSort {
         let row = egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(depth as f32 * 22.0);
-                ui.checkbox(&mut item.enabled, "");
+                crate::theme::checkbox(ui, &mut item.enabled, "");
                 match &mut item.node {
                     Node::Group(_) => {
                         ui.label(RichText::new("(").strong());
