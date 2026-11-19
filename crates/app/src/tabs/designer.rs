@@ -250,12 +250,14 @@ impl DesignerTab {
                     if ui.selectable_label(self.selected == i, if self.selected == i { "▶" } else { " " }).clicked() {
                         self.selected = i;
                     }
-                    let r = ui.add(egui::TextEdit::singleline(&mut c.name).desired_width(160.0));
+                    let h = ui.spacing().interact_size.y;
+                    // fixed widths: in a Grid a field otherwise shrinks to its column's first-frame width
+                    let r = ui.add_sized([160.0, h], egui::TextEdit::singleline(&mut c.name));
                     if r.gained_focus() {
                         self.selected = i;
                     }
                     ui.horizontal(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut c.data_type).desired_width(130.0));
+                        ui.add_sized([130.0, h], egui::TextEdit::singleline(&mut c.data_type));
                         egui::ComboBox::from_id_salt(("ty", self.id, i)).width(18.0).selected_text("").show_ui(ui, |ui| {
                             for t in types {
                                 if ui.selectable_label(c.data_type == *t, *t).clicked() {
@@ -272,8 +274,8 @@ impl DesignerTab {
                         }
                     });
                     ui.checkbox(&mut c.auto_increment, "");
-                    ui.add(egui::TextEdit::singleline(&mut c.default).desired_width(120.0).hint_text(i18n::t("es. 0, 'abc', CURRENT_TIMESTAMP")));
-                    ui.add_enabled(self.dialect != Dialect::Sqlite && self.dialect != Dialect::SqlServer, egui::TextEdit::singleline(&mut c.comment).desired_width(180.0));
+                    ui.add_sized([200.0, h], egui::TextEdit::singleline(&mut c.default).hint_text(i18n::t("es. 0, 'abc', CURRENT_TIMESTAMP")));
+                    ui.add_enabled_ui(self.dialect != Dialect::Sqlite && self.dialect != Dialect::SqlServer, |ui| ui.add_sized([200.0, h], egui::TextEdit::singleline(&mut c.comment)));
                     ui.end_row();
                 }
             });

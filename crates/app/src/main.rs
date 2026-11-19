@@ -64,6 +64,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_theme(egui::Theme::Light);
+            app::contrast(&cc.egui_ctx);
             // the size of text and controls: the user's (Visualizza › Dimensione…, ⌘/Ctrl +/−/0),
             // handled by the app (egui's own keys would not be saved)
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);

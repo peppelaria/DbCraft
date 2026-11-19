@@ -27,7 +27,7 @@ pub struct Cli {
     /// Query editor text, `|` = cursor, trailing `!` = open completion: `"SELECT u.| FROM users u!"`.
     pub editor: Option<String>,
     pub icon_gallery: bool,
-    /// Opens a tool tab: users, backup, automation, model, queries, chat, ai-settings, others:<kind>, menu:<name>.
+    /// Opens a tool tab: users, backup, automation, model, queries, chat, ai-settings, design:<table>, others:<kind>, menu:<name>.
     pub open: Option<String>,
     /// Text in the tree's search box.
     pub tree_filter: Option<String>,

@@ -1844,6 +1844,9 @@ impl App {
                 "chat" => self.chat_open = true,
                 "ai-settings" => self.open_ai_settings(),
                 other => {
+                    if let Some(t) = other.strip_prefix("design:") {
+                        self.actions.push(Action::DesignTable(ObjRef { conn: loc.conn.clone(), db: loc.db.clone(), schema: loc.schema.clone(), name: t.to_string(), kind: ObjectKind::Table }));
+                    }
                     if let Some(k) = other.strip_prefix("others:") {
                         let kind = [CatalogKind::Indexes, CatalogKind::Sequences, CatalogKind::Events, CatalogKind::Types, CatalogKind::Extensions, CatalogKind::Synonyms]
                             .into_iter()
@@ -1999,6 +2002,28 @@ struct TreeRow {
 }
 
 /// A size among those on offer (a hand-edited settings.json cannot make the app unusable).
+/// Controls that stand out from the page: egui's default theme draws text fields and checkboxes without a border
+/// and rounds everything off, so on the light theme an empty field or an unchecked box nearly vanishes.
+pub fn contrast(ctx: &egui::Context) {
+    use egui::{Color32, CornerRadius, Stroke};
+    ctx.all_styles_mut(|s| {
+        let v = &mut s.visuals;
+        let (border, hover, line, field, boxed) = if v.dark_mode {
+            (Color32::from_gray(105), Color32::from_gray(150), Color32::from_gray(75), Color32::from_gray(22), Color32::from_gray(45))
+        } else {
+            (Color32::from_gray(150), Color32::from_gray(95), Color32::from_gray(200), Color32::WHITE, Color32::from_gray(250))
+        };
+        v.widgets.inactive.bg_stroke = Stroke::new(1.0, border);
+        v.widgets.hovered.bg_stroke = Stroke::new(1.0, hover);
+        v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, line);
+        v.widgets.inactive.bg_fill = boxed;
+        v.text_edit_bg_color = Some(field);
+        for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+            w.corner_radius = CornerRadius::same(3);
+        }
+    });
+}
+
 pub fn clamp_zoom(z: f32) -> f32 {
     if z.is_finite() { z.clamp(store::UI_ZOOMS[0], store::UI_ZOOMS[store::UI_ZOOMS.len() - 1]) } else { store::UI_ZOOM_DEFAULT }
 }
