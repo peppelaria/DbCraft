@@ -98,7 +98,8 @@ impl AutomationTab {
             .header(22.0, |mut h| {
                 for t in ["Nome", "Azione", "Database", "Pianificazione", "Prossima", "Ultima", "Esito"] {
                     h.col(|ui| {
-                        ui.strong(i18n::t(t));
+                        // one line: a narrow last column would otherwise stack its title letter by letter
+                        ui.add(egui::Label::new(RichText::new(i18n::t(t)).strong()).truncate());
                     });
                 }
             })

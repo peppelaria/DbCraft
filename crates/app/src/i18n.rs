@@ -275,10 +275,8 @@ pub fn table_json() -> String {
 
 /// Come `tr`, per una `String` già fatta (es. `format!`).
 pub fn tf(s: String) -> String {
-    match tr(&s) {
-        Cow::Borrowed(_) => s,
-        Cow::Owned(o) => o,
-    }
+    // (a borrowed result may be the exact translation, not `s` itself)
+    tr(&s).into_owned()
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +421,14 @@ mod tests {
         let (f, h) = split_format("a {{b}} {c}");
         assert_eq!((f, h), (vec!["a {b} ".to_string(), String::new()], vec!["c".to_string()]));
         assert!(Pattern::new("{} {}").is_none());
+    }
+
+    #[test]
+    fn tf_traduce_anche_le_chiavi_esatte() {
+        // a text built at runtime that is a key as it is («ogni ora» from `Schedule::describe`)
+        set_lang(Lang::En);
+        assert_eq!(tf("ogni ora".to_string()), "every hour");
+        assert_eq!(tf("ogni 15 minuti".to_string()), "every 15 minutes");
     }
 
     #[test]
