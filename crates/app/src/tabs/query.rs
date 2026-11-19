@@ -129,6 +129,8 @@ pub struct QueryTab {
     confirm: Option<Vec<String>>,
     /// Scripted (`--query … --table-ui edit`): edit the first editable cell and ask to save.
     pub debug_edit: bool,
+    /// Scripted (`--query … --table-ui picker`): open the date picker of the first date column.
+    pub debug_picker: bool,
 }
 
 fn changes_schema(sql: &str) -> bool {
@@ -228,6 +230,7 @@ impl QueryTab {
             saving: false,
             confirm: None,
             debug_edit: false,
+            debug_picker: false,
         }
     }
 
@@ -578,6 +581,11 @@ impl QueryTab {
         v.edit = Some(ResultEdit { schema: src.schema, table: info.name, key, cols, editable });
         if self.debug_edit && let Some(c) = first {
             Self::set_result_cell(v, 0, c, Some("Modificato".into()));
+        }
+        if std::mem::take(&mut self.debug_picker)
+            && let Some(c) = v.columns.iter().enumerate().position(|(i, c)| v.edit.as_ref().is_some_and(|e| e.editable[i]) && dbgrid::datetime::DateKind::of(c.kind).is_some())
+        {
+            v.grid.open_date_picker(0, c as u32);
         }
     }
 

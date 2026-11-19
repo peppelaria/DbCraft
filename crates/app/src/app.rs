@@ -1862,6 +1862,7 @@ impl App {
             let id = self.next_id;
             let mut tab = QueryTab::new(id, loc);
             tab.debug_edit = self.cli.table_ui.iter().any(|f| f == "edit");
+            tab.debug_picker = self.cli.table_ui.iter().any(|f| f == "picker");
             tab.set_sql(sql, true);
             self.add_tab("Query 1".into(), Tab::Query(Box::new(tab)));
         }
