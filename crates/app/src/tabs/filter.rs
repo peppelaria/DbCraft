@@ -447,39 +447,43 @@ impl FilterSort {
     fn item_ui(&self, ui: &mut egui::Ui, item: &mut Item, path: Vec<usize>, last: bool, depth: usize, columns: &[GridColumn], acts: &mut Vec<Act>, apply: &mut bool) {
         let selected = self.selected.as_ref() == Some(&path);
         let fill = if selected { ui.visuals().selection.bg_fill.gamma_multiply(0.35) } else { Color32::TRANSPARENT };
-        let row = egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(depth as f32 * 22.0);
-                crate::theme::checkbox(ui, &mut item.enabled, "");
-                match &mut item.node {
-                    Node::Group(_) => {
-                        ui.label(RichText::new("(").strong());
+        // The row's click (to select it) goes below its tokens: a click sense added to the Frame's
+        // response afterwards would be on top of them and take their clicks.
+        let row = ui.scope_builder(egui::UiBuilder::new().sense(Sense::click()), |ui| {
+            egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(depth as f32 * 22.0);
+                    crate::theme::checkbox(ui, &mut item.enabled, "");
+                    match &mut item.node {
+                        Node::Group(_) => {
+                            ui.label(RichText::new("(").strong());
+                        }
+                        Node::Cond(c) => {
+                            ui.add_enabled_ui(item.enabled, |ui| self.cond_ui(ui, c, &path, columns, acts, apply));
+                        }
                     }
-                    Node::Cond(c) => {
-                        ui.add_enabled_ui(item.enabled, |ui| self.cond_ui(ui, c, &path, columns, acts, apply));
+                    if matches!(item.node, Node::Cond(_)) && !last {
+                        join_token(ui, &mut item.join);
                     }
-                }
-                if matches!(item.node, Node::Cond(_)) && !last {
-                    join_token(ui, &mut item.join);
-                }
-                if selected {
-                    ui.add_space(12.0);
-                    if matches!(item.node, Node::Group(_)) && ui.small_button("+").on_hover_text(i18n::t("Aggiungi una condizione nel gruppo")).clicked() {
-                        acts.push(Act::AddInside(path.clone()));
+                    if selected {
+                        ui.add_space(12.0);
+                        if matches!(item.node, Node::Group(_)) && ui.small_button("+").on_hover_text(i18n::t("Aggiungi una condizione nel gruppo")).clicked() {
+                            acts.push(Act::AddInside(path.clone()));
+                        }
+                        if ui.small_button("|+").on_hover_text(i18n::t("Aggiungi una condizione dopo questa")).clicked() {
+                            acts.push(Act::AddCond(path.clone()));
+                        }
+                        if ui.small_button("()+").on_hover_text(i18n::t("Aggiungi un gruppo tra parentesi")).clicked() {
+                            acts.push(Act::AddGroup(path.clone()));
+                        }
+                        if crate::icons::small(ui, crate::icons::G::Delete, "Elimina", true).clicked() {
+                            acts.push(Act::Delete(path.clone()));
+                        }
                     }
-                    if ui.small_button("|+").on_hover_text(i18n::t("Aggiungi una condizione dopo questa")).clicked() {
-                        acts.push(Act::AddCond(path.clone()));
-                    }
-                    if ui.small_button("()+").on_hover_text(i18n::t("Aggiungi un gruppo tra parentesi")).clicked() {
-                        acts.push(Act::AddGroup(path.clone()));
-                    }
-                    if crate::icons::small(ui, crate::icons::G::Delete, "Elimina", true).clicked() {
-                        acts.push(Act::Delete(path.clone()));
-                    }
-                }
+                });
             });
         });
-        if row.response.interact(Sense::click()).clicked() {
+        if row.response.clicked() {
             acts.push(Act::Select(path.clone()));
         }
         if let Node::Group(children) = &mut item.node {
@@ -631,6 +635,92 @@ mod tests {
         assert!(matches!(&f.items[1].node, Node::Group(g) if g.len() == 1));
         f.apply_act(Act::Delete(vec![0]), "id");
         assert_eq!(f.items.len(), 1);
+    }
+
+    /// Draws the panel headless and clicks the widget that `pick` chooses among the clickable ones
+    /// (in drawing order, with what they say about themselves) at the `spot` of its rectangle;
+    /// returns the labels on screen afterwards.
+    fn click_on(f: &mut FilterSort, pick: impl Fn(&[Option<egui::WidgetInfo>]) -> Option<usize>, spot: fn(egui::Rect) -> egui::Pos2) -> Vec<String> {
+        let ctx = egui::Context::default();
+        // as in main.rs
+        ctx.set_theme(egui::Theme::Light);
+        crate::app::contrast(&ctx);
+        crate::theme::install(&ctx);
+        ctx.global_style_mut(|s| s.debug.show_interactive_widgets = true);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0));
+        let widgets = |ctx: &egui::Context| -> Vec<(Option<egui::WidgetInfo>, egui::Rect)> {
+            ctx.viewport(|vp| {
+                let w = &vp.this_pass.widgets;
+                w.layer_ids().flat_map(|l| w.get_layer(l).filter(|r| r.sense.senses_click()).map(|r| (w.info(r.id).cloned(), r.rect)).collect::<Vec<_>>()).collect()
+            })
+        };
+        let pass = |ctx: &egui::Context, events: Vec<egui::Event>, f: &mut FilterSort| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                f.ui(ui, &cols(), Dialect::MySql);
+            });
+            out.textures_delta.clear();
+        };
+        pass(&ctx, vec![], f);
+        pass(&ctx, vec![], f);
+        let all = widgets(&ctx);
+        let infos: Vec<_> = all.iter().map(|(i, _)| i.clone()).collect();
+        let at = spot(all[pick(&infos).unwrap()].1);
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        pass(&ctx, vec![egui::Event::PointerMoved(at)], f);
+        pass(&ctx, vec![button(true)], f);
+        pass(&ctx, vec![button(false)], f);
+        pass(&ctx, vec![], f);
+        widgets(&ctx).into_iter().filter_map(|(i, _)| i?.label).collect()
+    }
+
+    fn click_token(f: &mut FilterSort, label: &str) -> Vec<String> {
+        click_on(f, |w| w.iter().position(|i| i.as_ref().is_some_and(|i| i.label.as_deref() == Some(label))), |r| r.center())
+    }
+
+    fn checkbox(w: &[Option<egui::WidgetInfo>]) -> Option<usize> {
+        w.iter().position(|i| i.as_ref().is_some_and(|i| i.role == egui::Role::CheckBox))
+    }
+
+    /// One condition `id = <?>`, selected (its buttons shown).
+    fn one_selected() -> FilterSort {
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        f.select(vec![0]);
+        f
+    }
+
+    #[test]
+    fn everything_in_a_condition_row_takes_its_own_clicks() {
+        // the value: becomes a text field
+        let mut f = one_selected();
+        click_token(&mut f, "<?>");
+        assert_eq!(f.editing, Some((vec![0], 0)));
+        // the operator: opens the list of operators
+        let mut f = one_selected();
+        assert!(click_token(&mut f, "=").iter().any(|l| l == i18n::t(Op::Contains.label())));
+        // the field: opens the list of columns
+        let mut f = one_selected();
+        assert!(click_token(&mut f, "id").iter().any(|l| l == "name"));
+        // the check box: turns the condition off
+        let mut f = one_selected();
+        click_on(&mut f, checkbox, |r| r.center());
+        assert!(!f.items[0].enabled);
+        // |+ adds a condition, ()+ a group
+        let mut f = one_selected();
+        click_token(&mut f, "|+");
+        assert_eq!(f.items.len(), 2);
+        let mut f = one_selected();
+        click_token(&mut f, "()+");
+        assert!(matches!(f.items.get(1), Some(Item { node: Node::Group(_), .. })));
+        // the bin (an icon, which doesn't describe itself: the one after ()+) removes it
+        let mut f = one_selected();
+        click_on(&mut f, |w| w.iter().position(|i| i.as_ref().is_some_and(|i| i.label.as_deref() == Some("()+"))).map(|k| k + 1), |r| r.center());
+        assert!(f.items.is_empty());
+        // a click on the empty part of the row (the clickable thing just before its check box,
+        // near its right end) still selects it
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        click_on(&mut f, |w| checkbox(w)?.checked_sub(1), |r| r.right_center() - egui::vec2(10.0, 0.0));
+        assert_eq!(f.selected, Some(vec![0]));
     }
 
     #[test]
