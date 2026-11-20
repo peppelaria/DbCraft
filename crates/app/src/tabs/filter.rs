@@ -637,9 +637,10 @@ mod tests {
         assert_eq!(f.items.len(), 1);
     }
 
-    /// Draws the panel headless and clicks the widget labelled `label`; returns the
-    /// labels on screen afterwards.
-    fn click_token(f: &mut FilterSort, label: &str) -> Vec<String> {
+    /// Draws the panel headless and clicks the widget that `pick` chooses among the clickable ones
+    /// (in drawing order, with what they say about themselves) at the `spot` of its rectangle;
+    /// returns the labels on screen afterwards.
+    fn click_on(f: &mut FilterSort, pick: impl Fn(&[Option<egui::WidgetInfo>]) -> Option<usize>, spot: fn(egui::Rect) -> egui::Pos2) -> Vec<String> {
         let ctx = egui::Context::default();
         // as in main.rs
         ctx.set_theme(egui::Theme::Light);
@@ -647,10 +648,10 @@ mod tests {
         crate::theme::install(&ctx);
         ctx.global_style_mut(|s| s.debug.show_interactive_widgets = true);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0));
-        let labels = |ctx: &egui::Context| -> Vec<(String, egui::Rect)> {
+        let widgets = |ctx: &egui::Context| -> Vec<(Option<egui::WidgetInfo>, egui::Rect)> {
             ctx.viewport(|vp| {
                 let w = &vp.this_pass.widgets;
-                w.layer_ids().flat_map(|l| w.get_layer(l).filter_map(|r| Some((w.info(r.id)?.label.clone()?, r.rect))).collect::<Vec<_>>()).collect()
+                w.layer_ids().flat_map(|l| w.get_layer(l).filter(|r| r.sense.senses_click()).map(|r| (w.info(r.id).cloned(), r.rect)).collect::<Vec<_>>()).collect()
             })
         };
         let pass = |ctx: &egui::Context, events: Vec<egui::Event>, f: &mut FilterSort| {
@@ -662,27 +663,64 @@ mod tests {
         };
         pass(&ctx, vec![], f);
         pass(&ctx, vec![], f);
-        let at = labels(&ctx).into_iter().find(|(l, _)| l == label).map(|(_, r)| r.center()).unwrap();
+        let all = widgets(&ctx);
+        let infos: Vec<_> = all.iter().map(|(i, _)| i.clone()).collect();
+        let at = spot(all[pick(&infos).unwrap()].1);
         let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         pass(&ctx, vec![egui::Event::PointerMoved(at)], f);
         pass(&ctx, vec![button(true)], f);
         pass(&ctx, vec![button(false)], f);
         pass(&ctx, vec![], f);
-        labels(&ctx).into_iter().map(|(l, _)| l).collect()
+        widgets(&ctx).into_iter().filter_map(|(i, _)| i?.label).collect()
+    }
+
+    fn click_token(f: &mut FilterSort, label: &str) -> Vec<String> {
+        click_on(f, |w| w.iter().position(|i| i.as_ref().is_some_and(|i| i.label.as_deref() == Some(label))), |r| r.center())
+    }
+
+    fn checkbox(w: &[Option<egui::WidgetInfo>]) -> Option<usize> {
+        w.iter().position(|i| i.as_ref().is_some_and(|i| i.role == egui::Role::CheckBox))
+    }
+
+    /// One condition `id = <?>`, selected (its buttons shown).
+    fn one_selected() -> FilterSort {
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        f.select(vec![0]);
+        f
     }
 
     #[test]
-    fn condition_tokens_take_their_own_clicks() {
+    fn everything_in_a_condition_row_takes_its_own_clicks() {
         // the value: becomes a text field
-        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        let mut f = one_selected();
         click_token(&mut f, "<?>");
         assert_eq!(f.editing, Some((vec![0], 0)));
         // the operator: opens the list of operators
-        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        let mut f = one_selected();
         assert!(click_token(&mut f, "=").iter().any(|l| l == i18n::t(Op::Contains.label())));
         // the field: opens the list of columns
-        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        let mut f = one_selected();
         assert!(click_token(&mut f, "id").iter().any(|l| l == "name"));
+        // the check box: turns the condition off
+        let mut f = one_selected();
+        click_on(&mut f, checkbox, |r| r.center());
+        assert!(!f.items[0].enabled);
+        // |+ adds a condition, ()+ a group
+        let mut f = one_selected();
+        click_token(&mut f, "|+");
+        assert_eq!(f.items.len(), 2);
+        let mut f = one_selected();
+        click_token(&mut f, "()+");
+        assert!(matches!(f.items.get(1), Some(Item { node: Node::Group(_), .. })));
+        // the bin (an icon, which doesn't describe itself: the one after ()+) removes it
+        let mut f = one_selected();
+        click_on(&mut f, |w| w.iter().position(|i| i.as_ref().is_some_and(|i| i.label.as_deref() == Some("()+"))).map(|k| k + 1), |r| r.center());
+        assert!(f.items.is_empty());
+        // a click on the empty part of the row (the clickable thing just before its check box,
+        // near its right end) still selects it
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        click_on(&mut f, |w| checkbox(w)?.checked_sub(1), |r| r.right_center() - egui::vec2(10.0, 0.0));
+        assert_eq!(f.selected, Some(vec![0]));
     }
 
     #[test]
