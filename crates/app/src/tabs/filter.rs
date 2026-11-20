@@ -447,39 +447,43 @@ impl FilterSort {
     fn item_ui(&self, ui: &mut egui::Ui, item: &mut Item, path: Vec<usize>, last: bool, depth: usize, columns: &[GridColumn], acts: &mut Vec<Act>, apply: &mut bool) {
         let selected = self.selected.as_ref() == Some(&path);
         let fill = if selected { ui.visuals().selection.bg_fill.gamma_multiply(0.35) } else { Color32::TRANSPARENT };
-        let row = egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(depth as f32 * 22.0);
-                crate::theme::checkbox(ui, &mut item.enabled, "");
-                match &mut item.node {
-                    Node::Group(_) => {
-                        ui.label(RichText::new("(").strong());
+        // The row's click (to select it) goes below its tokens: a click sense added to the Frame's
+        // response afterwards would be on top of them and take their clicks.
+        let row = ui.scope_builder(egui::UiBuilder::new().sense(Sense::click()), |ui| {
+            egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(depth as f32 * 22.0);
+                    crate::theme::checkbox(ui, &mut item.enabled, "");
+                    match &mut item.node {
+                        Node::Group(_) => {
+                            ui.label(RichText::new("(").strong());
+                        }
+                        Node::Cond(c) => {
+                            ui.add_enabled_ui(item.enabled, |ui| self.cond_ui(ui, c, &path, columns, acts, apply));
+                        }
                     }
-                    Node::Cond(c) => {
-                        ui.add_enabled_ui(item.enabled, |ui| self.cond_ui(ui, c, &path, columns, acts, apply));
+                    if matches!(item.node, Node::Cond(_)) && !last {
+                        join_token(ui, &mut item.join);
                     }
-                }
-                if matches!(item.node, Node::Cond(_)) && !last {
-                    join_token(ui, &mut item.join);
-                }
-                if selected {
-                    ui.add_space(12.0);
-                    if matches!(item.node, Node::Group(_)) && ui.small_button("+").on_hover_text(i18n::t("Aggiungi una condizione nel gruppo")).clicked() {
-                        acts.push(Act::AddInside(path.clone()));
+                    if selected {
+                        ui.add_space(12.0);
+                        if matches!(item.node, Node::Group(_)) && ui.small_button("+").on_hover_text(i18n::t("Aggiungi una condizione nel gruppo")).clicked() {
+                            acts.push(Act::AddInside(path.clone()));
+                        }
+                        if ui.small_button("|+").on_hover_text(i18n::t("Aggiungi una condizione dopo questa")).clicked() {
+                            acts.push(Act::AddCond(path.clone()));
+                        }
+                        if ui.small_button("()+").on_hover_text(i18n::t("Aggiungi un gruppo tra parentesi")).clicked() {
+                            acts.push(Act::AddGroup(path.clone()));
+                        }
+                        if crate::icons::small(ui, crate::icons::G::Delete, "Elimina", true).clicked() {
+                            acts.push(Act::Delete(path.clone()));
+                        }
                     }
-                    if ui.small_button("|+").on_hover_text(i18n::t("Aggiungi una condizione dopo questa")).clicked() {
-                        acts.push(Act::AddCond(path.clone()));
-                    }
-                    if ui.small_button("()+").on_hover_text(i18n::t("Aggiungi un gruppo tra parentesi")).clicked() {
-                        acts.push(Act::AddGroup(path.clone()));
-                    }
-                    if crate::icons::small(ui, crate::icons::G::Delete, "Elimina", true).clicked() {
-                        acts.push(Act::Delete(path.clone()));
-                    }
-                }
+                });
             });
         });
-        if row.response.interact(Sense::click()).clicked() {
+        if row.response.clicked() {
             acts.push(Act::Select(path.clone()));
         }
         if let Node::Group(children) = &mut item.node {
@@ -631,6 +635,54 @@ mod tests {
         assert!(matches!(&f.items[1].node, Node::Group(g) if g.len() == 1));
         f.apply_act(Act::Delete(vec![0]), "id");
         assert_eq!(f.items.len(), 1);
+    }
+
+    /// Draws the panel headless and clicks the widget labelled `label`; returns the
+    /// labels on screen afterwards.
+    fn click_token(f: &mut FilterSort, label: &str) -> Vec<String> {
+        let ctx = egui::Context::default();
+        // as in main.rs
+        ctx.set_theme(egui::Theme::Light);
+        crate::app::contrast(&ctx);
+        crate::theme::install(&ctx);
+        ctx.global_style_mut(|s| s.debug.show_interactive_widgets = true);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0));
+        let labels = |ctx: &egui::Context| -> Vec<(String, egui::Rect)> {
+            ctx.viewport(|vp| {
+                let w = &vp.this_pass.widgets;
+                w.layer_ids().flat_map(|l| w.get_layer(l).filter_map(|r| Some((w.info(r.id)?.label.clone()?, r.rect))).collect::<Vec<_>>()).collect()
+            })
+        };
+        let pass = |ctx: &egui::Context, events: Vec<egui::Event>, f: &mut FilterSort| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                f.ui(ui, &cols(), Dialect::MySql);
+            });
+            out.textures_delta.clear();
+        };
+        pass(&ctx, vec![], f);
+        pass(&ctx, vec![], f);
+        let at = labels(&ctx).into_iter().find(|(l, _)| l == label).map(|(_, r)| r.center()).unwrap();
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        pass(&ctx, vec![egui::Event::PointerMoved(at)], f);
+        pass(&ctx, vec![button(true)], f);
+        pass(&ctx, vec![button(false)], f);
+        pass(&ctx, vec![], f);
+        labels(&ctx).into_iter().map(|(l, _)| l).collect()
+    }
+
+    #[test]
+    fn condition_tokens_take_their_own_clicks() {
+        // the value: becomes a text field
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        click_token(&mut f, "<?>");
+        assert_eq!(f.editing, Some((vec![0], 0)));
+        // the operator: opens the list of operators
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        assert!(click_token(&mut f, "=").iter().any(|l| l == i18n::t(Op::Contains.label())));
+        // the field: opens the list of columns
+        let mut f = fs(vec![Item::cond("id", Op::Eq, "")]);
+        assert!(click_token(&mut f, "id").iter().any(|l| l == "name"));
     }
 
     #[test]
