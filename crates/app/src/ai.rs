@@ -689,9 +689,9 @@ pub fn context_of_model_entry(m: &serde_json::Value) -> Option<u32> {
 /// Modelli di un server, con il contesto se lo dichiara.
 pub fn list_models(p: &Provider, key: &str) -> Result<Vec<(String, Option<u32>)>> {
     let url = format!("{}/models", base(p));
-    let r = http(p, key, &url, None).map_err(|e| anyhow!("non raggiungibile ({e})"))?;
+    let mut r = http(p, key, &url, None).map_err(|e| anyhow!("non raggiungibile ({e})"))?;
     if r.status >= 400 {
-        bail!("{url}: HTTP {}", r.status);
+        bail!("{url}: {}", http_error(&mut r, key));
     }
     let v: serde_json::Value = serde_json::from_reader(r.body).map_err(|e| anyhow!("{url}: risposta non valida ({e})"))?;
     Ok(v["data"]
@@ -1092,20 +1092,7 @@ fn stream_round(
 ) -> Result<RoundOut> {
     let mut resp = http(p, key, url, Some(body))?;
     if resp.status >= 400 {
-        let code = resp.status;
-        let mut txt = String::new();
-        let _ = std::io::Read::read_to_string(&mut resp.body, &mut txt);
-        let msg = serde_json::from_str::<serde_json::Value>(&txt)
-            .ok()
-            .and_then(|v| {
-                v["error"]["message"]
-                    .as_str()
-                    .or(v[0]["error"]["message"].as_str())
-                    .or(v["message"].as_str())
-                    .map(String::from)
-            })
-            .unwrap_or(txt);
-        bail!("HTTP {code}: {}", msg.trim());
+        bail!("{}", http_error(&mut resp, key));
     }
 
     // con gli strumenti, le chiamate scritte come testo non si mostrano (vedi `text_calls`)
@@ -1261,6 +1248,31 @@ struct HttpResp {
     body: Box<dyn BufRead + Send>,
     /// Con curl: il processo e il file temporaneo, chiusi a fine lettura.
     _curl: Option<CurlGuard>,
+}
+
+/// «HTTP 401: messaggio del server», con un suggerimento quando il server
+/// vuole una chiave e non ne è stata data nessuna.
+fn http_error(resp: &mut HttpResp, key: &str) -> String {
+    let code = resp.status;
+    let mut txt = String::new();
+    let _ = std::io::Read::read_to_string(&mut resp.body, &mut txt);
+    let msg = serde_json::from_str::<serde_json::Value>(&txt)
+        .ok()
+        .and_then(|v| {
+            v["error"]["message"]
+                .as_str()
+                .or(v[0]["error"]["message"].as_str())
+                .or(v["message"].as_str())
+                .or(v["detail"].as_str())
+                .map(String::from)
+        })
+        .unwrap_or(txt);
+    let msg: String = msg.trim().chars().take(300).collect();
+    let mut out = if msg.is_empty() { format!("HTTP {code}") } else { format!("HTTP {code}: {msg}") };
+    if matches!(code, 401 | 403) && key.trim().is_empty() {
+        out.push_str(" — il server chiede una chiave API: impostala in «Chiave»");
+    }
+    out
 }
 
 /// GET (senza corpo) o POST JSON verso un provider.
