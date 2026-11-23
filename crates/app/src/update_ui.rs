@@ -199,6 +199,8 @@ impl Updater {
         let accent = Color32::from_rgb(0x25, 0x63, 0xEB);
         let red = Color32::from_rgb(0xD1, 0x34, 0x38);
         let can_self = selfupdate::current().is_some();
+        // the previous version kept aside by an update: the installed one is the one to open
+        let reserve = selfupdate::running_reserve();
         let phase = self.phase.clone();
         let ready = self.ready.clone();
         let error = self.error.clone();
@@ -235,6 +237,8 @@ impl Updater {
                         }
                     } else if let Some(e) = &error {
                         format!("Aggiornamento a DbCraft {} non riuscito: {}", r.version, e.lines().next().unwrap_or(""))
+                    } else if reserve {
+                        format!("Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.", update::current())
                     } else {
                         format!("È disponibile DbCraft {} (questa è la {}).", r.version, update::current())
                     };
@@ -279,7 +283,9 @@ impl Updater {
                         if ui.small_button(i18n::t("Novità")).clicked() {
                             selfupdate::open_url(&r.page);
                         }
-                        if can_self {
+                        if reserve {
+                            // nothing to download or install from here
+                        } else if can_self {
                             let label = if error.is_some() { "Riprova" } else { "Aggiorna ora" };
                             if primary(ui, label)
                                 .on_hover_text(i18n::t("Scarica la nuova versione, controlla il file e la installa al posto di questa. Connessioni e impostazioni restano."))

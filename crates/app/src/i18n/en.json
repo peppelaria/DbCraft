@@ -969,6 +969,7 @@
  "{}: {offset} record…": "{}: {offset} records…",
  "È disponibile DbCraft {}": "DbCraft {} is available",
  "È disponibile DbCraft {} (questa è la {}).": "DbCraft {} is available (this is {}).",
+ "Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.": "This is the copy of DbCraft {} kept aside by the last update: open the one in Applications.",
  "è compreso tra": "is between",
  "è nell'elenco": "is in list",
  "è null": "is null",

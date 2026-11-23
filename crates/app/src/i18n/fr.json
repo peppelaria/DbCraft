@@ -969,6 +969,7 @@
  "{}: {offset} record…": "{} : {offset} enregistrements…",
  "È disponibile DbCraft {}": "DbCraft {} est disponible",
  "È disponibile DbCraft {} (questa è la {}).": "DbCraft {} est disponible (vous utilisez la {}).",
+ "Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.": "Ceci est la copie de DbCraft {} mise de côté par la dernière mise à jour : ouvrez celle du dossier Applications.",
  "è compreso tra": "est compris entre",
  "è nell'elenco": "est dans la liste",
  "è null": "est null",

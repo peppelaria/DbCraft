@@ -969,6 +969,7 @@
  "{}: {offset} record…": "{}：{offset} 条记录…",
  "È disponibile DbCraft {}": "DbCraft {} 已可用",
  "È disponibile DbCraft {} (questa è la {}).": "DbCraft {} 已可用（当前版本为 {}）。",
+ "Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.": "这是上次更新时保留的 DbCraft {} 副本：请打开“应用程序”中的那一个。",
  "è compreso tra": "介于",
  "è nell'elenco": "在列表中",
  "è null": "是 null",
