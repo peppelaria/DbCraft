@@ -64,7 +64,24 @@ pub fn current() -> Option<Install> {
     }
     let exe = std::env::current_exe().ok()?;
     let exe = exe.canonicalize().unwrap_or(exe);
+    // the copy an earlier update kept aside does not update itself: its path is the one where
+    // the next previous version goes, so the new version would be put there and then thrown
+    // away to make room for this one, which would open again (and ask again)
+    if inside(&exe, &work_dir()) {
+        return None;
+    }
     detect(&exe)
+}
+
+/// This is the previous version, kept aside by an update (the installed one is elsewhere).
+pub fn running_reserve() -> bool {
+    std::env::current_exe().is_ok_and(|exe| inside(&exe.canonicalize().unwrap_or(exe), &work_dir()))
+}
+
+/// `path` is in `dir` (both as they are on disk).
+fn inside(path: &Path, dir: &Path) -> bool {
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    path.starts_with(dir)
 }
 
 fn detect(exe: &Path) -> Option<Install> {
@@ -97,6 +114,12 @@ pub fn silent(install: &Install) -> bool {
 /// Folder of the downloaded files (in the config folder).
 fn work_dir() -> PathBuf {
     crate::store::config_dir().unwrap_or_else(std::env::temp_dir).join("updates")
+}
+
+/// Where the previous version stays aside after an update. A `.noindex` folder: Spotlight does
+/// not list what is inside, so looking for DbCraft finds only the installed one.
+fn reserve_dir() -> PathBuf {
+    work_dir().join("previous.noindex")
 }
 
 /// Downloads, checks and installs `release` in place of this copy.
@@ -218,10 +241,14 @@ fn install_mac(dmg: &Path, bundle: &Path, version: &str) -> Result<(Vec<OsString
             let _ = std::fs::rename(&old, bundle);
             return Err(format!("sostituzione dell'app: {e}"));
         }
-        // the previous version stays aside in the config folder (updates/DbCraft-previous.app)
-        // until another one arrives: if the new one does not start, it can be put back by hand
-        let keep = work_dir().join("DbCraft-previous.app");
+        // the previous version stays aside in the config folder
+        // (updates/previous.noindex/DbCraft-previous.app) until another one arrives: if the new
+        // one does not start, it can be put back by hand
+        let keep = reserve_dir().join("DbCraft-previous.app");
         let _ = std::fs::remove_dir_all(&keep);
+        // where versions up to 0.2.7 kept it (Spotlight listed it next to the installed one)
+        let _ = std::fs::remove_dir_all(work_dir().join("DbCraft-previous.app"));
+        let _ = std::fs::create_dir_all(reserve_dir());
         if std::fs::rename(&old, &keep).is_err() {
             eprintln!("aggiornamento: la versione precedente non resta da parte");
         }
@@ -242,8 +269,9 @@ fn install_mac_binary(dmg: &Path, exe: &Path, version: &str) -> Result<(Vec<OsSt
         }
         let staged = dir.join(format!(".dbcraft-update-{}", std::process::id()));
         std::fs::copy(src.join("Contents/MacOS/dbcraft"), &staged).map_err(|e| format!("copia del nuovo programma: {e}"))?;
-        // the previous program stays aside in the config folder (updates/dbcraft-previous)
-        let _ = std::fs::copy(exe, work_dir().join("dbcraft-previous"));
+        // the previous program stays aside in the config folder (updates/previous.noindex/dbcraft-previous)
+        let _ = std::fs::create_dir_all(reserve_dir());
+        let _ = std::fs::copy(exe, reserve_dir().join("dbcraft-previous"));
         if let Err(e) = std::fs::rename(&staged, exe) {
             let _ = std::fs::remove_file(&staged);
             return Err(format!("sostituzione del programma: {e}"));
@@ -420,6 +448,25 @@ pub fn relaunch_after_exit(ready: &Ready) -> Result<()> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_copy_kept_aside_is_recognised() {
+        // as on disk (macOS: /var is /private/var), like the program's path
+        let tmp = std::env::temp_dir();
+        let base = tmp.canonicalize().unwrap_or(tmp).join(format!("dbcraft-reserve-{}", std::process::id()));
+        let work = base.join("updates");
+        let keep = work.join("previous.noindex/DbCraft-previous.app/Contents/MacOS");
+        std::fs::create_dir_all(&keep).unwrap();
+        std::fs::create_dir_all(base.join("Applications/DbCraft.app/Contents/MacOS")).unwrap();
+        assert!(inside(&keep.join("dbcraft"), &work));
+        // the old place too (updates/DbCraft-previous.app)
+        assert!(inside(&work.join("DbCraft-previous.app/Contents/MacOS/dbcraft"), &work));
+        let installed = base.join("Applications/DbCraft.app/Contents/MacOS/dbcraft");
+        assert!(!inside(&installed, &work));
+        // not fooled by a name that only begins the same way
+        assert!(!inside(&base.join("updates-other/dbcraft"), &work));
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn checksums() {

@@ -969,6 +969,7 @@
  "{}: {offset} record…": "{}: 레코드 {offset}개…",
  "È disponibile DbCraft {}": "DbCraft {}을(를) 사용할 수 있습니다",
  "È disponibile DbCraft {} (questa è la {}).": "DbCraft {}을(를) 사용할 수 있습니다 (현재 버전: {}).",
+ "Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.": "이것은 지난 업데이트 때 보관된 DbCraft {}의 사본입니다. 응용 프로그램 폴더에 있는 것을 여세요.",
  "è compreso tra": "범위 안에 있음",
  "è nell'elenco": "목록에 있음",
  "è null": "null임",

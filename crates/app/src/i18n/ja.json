@@ -969,6 +969,7 @@
  "{}: {offset} record…": "{}: {offset} 件のレコード…",
  "È disponibile DbCraft {}": "DbCraft {} が利用可能です",
  "È disponibile DbCraft {} (questa è la {}).": "DbCraft {} が利用可能です (現在は {})。",
+ "Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.": "これは前回のアップデートで残された DbCraft {} のコピーです。「アプリケーション」にある方を開いてください。",
  "è compreso tra": "次の範囲内",
  "è nell'elenco": "次のリスト内",
  "è null": "NULL である",

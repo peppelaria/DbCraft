@@ -969,6 +969,7 @@
  "{}: {offset} record…": "{}: {offset} записів…",
  "È disponibile DbCraft {}": "Доступна версія DbCraft {}",
  "È disponibile DbCraft {} (questa è la {}).": "Доступна версія DbCraft {} (у вас {}).",
+ "Questa è la copia di DbCraft {} tenuta da parte dall'ultimo aggiornamento: apri quella in Applicazioni.": "Це копія DbCraft {}, збережена під час останнього оновлення: відкрийте ту, що в папці «Програми».",
  "è compreso tra": "між",
  "è nell'elenco": "у списку",
  "è null": "є null",
